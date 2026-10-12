@@ -90,8 +90,15 @@ export default {
         if (model.connectionType === 'local') return json({ error: 'Los modelos locales todavía no se ejecutan desde este Worker.' }, 400);
         if (!String(model.provider || '').toLowerCase().includes('gemini') && !String(model.provider || '').toLowerCase().includes('google')) return json({ error: 'Este endpoint de prueba solo admite Google Gemini por ahora.' }, 400);
         if (!model.apiKey) return json({ error: 'El modelo no tiene API Key guardada. Edítalo y guarda la clave antes de sincronizar.' }, 400);
-        const modelId = String(model.modelId || agent.model || '');
-        if (!/^gemini-[a-zA-Z0-9.-]+$/.test(modelId)) return json({ error: 'El ID de modelo Gemini no es válido.' }, 400);
+        // Google puede mostrar el identificador como "gemini-..." o como recurso "models/gemini-...".
+        // Normalizamos espacios y el prefijo para enviar solo el ID que espera generateContent.
+        const configuredModelId = String(model.modelId || agent.model || '').trim();
+        const modelId = configuredModelId.replace(/^models\//i, '');
+        if (!/^gemini-[a-zA-Z0-9._-]+$/i.test(modelId)) {
+          return json({
+            error: `El ID de modelo Gemini no es válido: "${configuredModelId}". Usa el ID técnico, por ejemplo gemini-3.5-flash-lite, sin URL ni texto adicional.`,
+          }, 400);
+        }
         const systemInstruction = [agent.systemPrompt || '', agent.personality ? `Personalidad: ${agent.personality}` : '', agent.description ? `Descripción: ${agent.description}` : ''].filter(Boolean).join('\n\n');
         let upstream: Response;
         try {
