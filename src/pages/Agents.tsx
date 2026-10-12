@@ -119,7 +119,7 @@ export const AgentsPage = () => {
     setChatReply('');
     try {
       const saved = await getDocData('appSettings', 'workerConfig');
-      const workerUrl = String(saved?.value || 'https://bot-ia-pc.elherreroanapse.workers.dev').replace(/\\/$/, '');
+      const workerUrl = String(saved?.value || 'https://bot-ia-pc.elherreroanapse.workers.dev').replace(/\/$/, '');
       const result = await sendAgentChatMessage(workerUrl, chatAgent.id, chatMessage.trim());
       setChatReply(result.reply);
       setChatModel(result.model);
