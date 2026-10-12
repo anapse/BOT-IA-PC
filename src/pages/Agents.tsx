@@ -6,6 +6,15 @@ import { subscribeCollection, addData, updateData, deleteData, getDocData } from
 import { Bot, Plus, Trash2, Edit2, Play, Pause, Search, Send, MessageCircle } from 'lucide-react';
 import { sendAgentChatMessage } from '../services/worker/client';
 
+interface ModelConfig {
+  id: string;
+  name: string;
+  provider: string;
+  modelId: string;
+  connectionType: 'cloud' | 'local';
+  status: 'activo' | 'inactivo';
+}
+
 interface Agent {
   id: string;
   name: string;
@@ -19,6 +28,7 @@ interface Agent {
 
 export const AgentsPage = () => {
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [models, setModels] = useState<ModelConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -35,7 +45,7 @@ export const AgentsPage = () => {
   const [description, setDescription] = useState('');
   const [personality, setPersonality] = useState('');
   const [systemPrompt, setSystemPrompt] = useState('');
-  const [model, setModel] = useState('gemini-1.5-pro');
+  const [model, setModel] = useState('');
   const [status, setStatus] = useState<'activo' | 'inactivo' | 'pausado'>('activo');
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -45,7 +55,13 @@ export const AgentsPage = () => {
       setAgents(data as Agent[]);
       setLoading(false);
     });
-    return () => unsubscribe();
+    const unsubscribeModels = subscribeCollection('modelConfigs', (data) => {
+      setModels(data as ModelConfig[]);
+    });
+    return () => {
+      unsubscribe();
+      unsubscribeModels();
+    };
   }, []);
 
   const openCreateModal = () => {
@@ -54,7 +70,7 @@ export const AgentsPage = () => {
     setDescription('');
     setPersonality('Asistente profesional y analítico');
     setSystemPrompt('Eres un agente autónomo de Bot IA PC...');
-    setModel('gemini-1.5-pro');
+    setModel(models.find((item) => item.status === 'activo')?.modelId || '');
     setStatus('activo');
     setErrorMsg('');
     setIsModalOpen(true);
@@ -66,7 +82,7 @@ export const AgentsPage = () => {
     setDescription(agent.description || '');
     setPersonality(agent.personality || '');
     setSystemPrompt(agent.systemPrompt || '');
-    setModel(agent.model || 'gemini-1.5-pro');
+    setModel(agent.model || models.find((item) => item.status === 'activo')?.modelId || '');
     setStatus(agent.status || 'activo');
     setErrorMsg('');
     setIsModalOpen(true);
@@ -336,13 +352,27 @@ export const AgentsPage = () => {
                     value={model}
                     onChange={(e) => setModel(e.target.value)}
                     className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-sm text-slate-200 focus:outline-none focus:border-cyan-500"
+                    required
                   >
-                    <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
-                    <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
-                    <option value="gpt-4o">OpenAI GPT-4o</option>
-                    <option value="claude-3-5-sonnet">Claude 3.5 Sonnet</option>
-                    <option value="ollama-local">Ollama (Local / PC)</option>
+                    <option value="" disabled>
+                      {models.filter((item) => item.status === 'activo').length
+                        ? 'Selecciona un modelo activo'
+                        : 'No hay modelos activos; configura uno en Modelos'}
+                    </option>
+                    {model && !models.some((item) => item.status === 'activo' && item.modelId === model) && (
+                      <option value={model}>{model} (asignación anterior; elige un modelo activo)</option>
+                    )}
+                    {models.filter((item) => item.status === 'activo').map((item) => (
+                      <option key={item.id} value={item.modelId}>
+                        {item.name} — {item.modelId}
+                      </option>
+                    ))}
                   </select>
+                  {models.filter((item) => item.status === 'activo').length === 0 && (
+                    <p className="text-xs text-amber-400 mt-1">
+                      Primero registra y activa un modelo en la sección Modelos.
+                    </p>
+                  )}
                 </div>
 
                 <div className="space-y-1.5">
