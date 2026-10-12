@@ -1,0 +1,10 @@
+name = "bot-ia-pc-worker"
+main = "index.ts"
+compatibility_date = "2024-01-01"
+
+[kv_namespaces]
+WORKER_KV = "XXXXXXXXXXXX" # Replace with actual KV namespace ID
+
+[vars]
+FIREBASE_PROJECT_ID = "gen-lang-client-0164582744"
+ADMIN_EMAILS = "admin@ejemplo.com"

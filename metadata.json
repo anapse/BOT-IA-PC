@@ -1,0 +1,6 @@
+{
+  "name": "Bot IA PC",
+  "description": "Plataforma para crear, configurar y administrar agentes de inteligencia artificial.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

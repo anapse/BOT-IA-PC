@@ -1,0 +1,16 @@
+{
+  "name": "bot-ia-pc-worker",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "wrangler dev src/index.ts",
+    "deploy": "wrangler deploy src/index.ts",
+    "test": "tsx tests/test.ts"
+  },
+  "dependencies": {
+    "jose": "^5.9.3"
+  },
+  "devDependencies": {
+    "wrangler": "^3.100.0",
+    "tsx": "^4.21.0"
+  }
+}

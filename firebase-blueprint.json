@@ -1,0 +1,66 @@
+{
+  "entities": {
+    "Agent": {
+      "title": "Agent",
+      "description": "AI Agent configuration",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "personality": { "type": "string" },
+        "systemPrompt": { "type": "string" },
+        "model": { "type": "string" },
+        "telegramBotId": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "createdAt"]
+    },
+    "TelegramConnection": {
+      "title": "TelegramConnection",
+      "description": "Telegram bot connection configuration",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "agentId": { "type": "string" },
+        "botToken": { "type": "string" },
+        "webhookUrl": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "createdAt"]
+    },
+    "ModelConfig": {
+      "title": "ModelConfig",
+      "description": "AI model provider configuration",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "provider": { "type": "string" },
+        "modelId": { "type": "string" },
+        "connectionType": { "type": "string" },
+        "endpoint": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/agents/{agentId}": {
+      "schema": "Agent",
+      "description": "Collection of AI agents"
+    },
+    "/telegramConnections/{connectionId}": {
+      "schema": "TelegramConnection",
+      "description": "Collection of Telegram connections"
+    },
+    "/modelConfigs/{modelId}": {
+      "schema": "ModelConfig",
+      "description": "Collection of AI model configurations"
+    }
+  }
+}

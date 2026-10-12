@@ -1,0 +1,10 @@
+{
+  "name": "bot-ia-pc-worker",
+  "version": "1.0.0",
+  "devDependencies": {
+    "wrangler": "^3.100.0"
+  },
+  "dependencies": {
+    "jose": "^5.9.3"
+  }
+}

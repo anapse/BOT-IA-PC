@@ -1,0 +1,46 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    function isSignedIn() { return request.auth != null; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function isAdmin() { return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)); }
+    
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    match /agents/{agentId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(agentId);
+      allow update: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+
+    match /telegramConnections/{connectionId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(connectionId);
+      allow update: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+
+    match /modelConfigs/{modelId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(modelId);
+      allow update: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+
+    match /appSettings/{settingId} {
+      allow read: if isSignedIn();
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /admins/{adminId} {
+      allow read: if false; // Admin list is hidden
+      allow write: if false; // Only via console/CLI
+    }
+  }
+}
