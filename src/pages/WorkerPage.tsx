@@ -77,9 +77,19 @@ export const WorkerPage = () => {
         connections: connections || [],
         syncedAt: new Date().toISOString(),
       };
-      await syncWorkerConfig(url.trim(), payload);
-      setStatus(`Sincronización correcta. Enviados a KV: ${payload.agents.length} agentes, ${payload.models.length} modelos y ${payload.connections.length} conexiones.`);
-      setStatusType('success');
+      const syncResult = await syncWorkerConfig(url.trim(), payload);
+      const webhookResults = Array.isArray(syncResult?.telegramWebhooks) ? syncResult.telegramWebhooks : [];
+      const registered = webhookResults.filter((item: any) => item.status === 'registered').length;
+      const failed = webhookResults.filter((item: any) => item.status === 'error').length;
+      const inactive = webhookResults.filter((item: any) => item.status === 'inactive').length;
+      let message = `Sincronización correcta. Enviados a KV: ${payload.agents.length} agentes, ${payload.models.length} modelos y ${payload.connections.length} conexiones.`;
+      if (webhookResults.length) {
+        message += ` Webhooks Telegram: ${registered} registrados${failed ? `, ${failed} con error` : ''}${inactive ? `, ${inactive} inactivos (sin webhook)` : ''}.`;
+        const failures = webhookResults.filter((item: any) => item.status === 'error' && item.description).map((item: any) => item.description);
+        if (failures.length) message += ` Detalle: ${failures.join('; ')}`;
+      }
+      setStatus(message);
+      setStatusType(failed ? 'error' : 'success');
     } catch (err: any) {
       setStatus(`Fallo en la sincronización: ${err.message}`);
       setStatusType('error');
