@@ -39,16 +39,32 @@ export default {
 
     if (url.pathname === '/sync' && request.method === 'POST') {
       const authHeader = request.headers.get('Authorization');
-      if (!authHeader?.startsWith('Bearer ')) return respond('Unauthorized', 401);
+      if (!authHeader?.startsWith('Bearer ')) {
+        return respond(JSON.stringify({ error: 'missing_bearer_token' }), 401, {
+          'Content-Type': 'application/json',
+        });
+      }
 
-      const token = authHeader.split(' ')[1];
-      const { authorized } = await validateToken(
+      const token = authHeader.slice('Bearer '.length).trim();
+      const validation = await validateToken(
         token,
         env.FIREBASE_PROJECT_ID,
         String(env.ADMIN_EMAILS || '').split(',').map((email: string) => email.trim()).filter(Boolean),
       );
 
-      if (!authorized) return respond('Forbidden', 403);
+      if (!validation.authorized) {
+        const messages: Record<string, string> = {
+          invalid_token: 'Firebase ID token inválido o el proyecto configurado no coincide.',
+          email_missing: 'El token de Firebase no contiene un correo.',
+          email_unverified: 'El correo de la cuenta de Firebase no está verificado.',
+          not_admin: 'La cuenta autenticada no está en la lista de administradores del Worker.',
+        };
+        return respond(JSON.stringify({
+          error: 'forbidden',
+          reason: validation.reason,
+          message: messages[validation.reason],
+        }), 403, { 'Content-Type': 'application/json' });
+      }
 
       let config;
       try {
