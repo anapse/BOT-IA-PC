@@ -86,9 +86,10 @@ export default {
       const model = models.find((item: any) => item?.status === 'activo' && (item?.modelId === agent.model || item?.id === agent.model || item?.name === agent.model));
       const provider = String(model?.provider || '').toLowerCase();
       const isNvidia = provider.includes('nvidia');
+      const isOpenRouter = provider.includes('openrouter');
       const isGemini = provider.includes('gemini') || provider.includes('google');
-      if (!model || model.connectionType === 'local' || (!isGemini && !isNvidia) || !model.apiKey) {
-        await send('El modelo asignado no está listo. Comprueba que sea Gemini o NVIDIA NIM, esté activo y tenga API Key.');
+      if (!model || model.connectionType === 'local' || (!isGemini && !isNvidia && !isOpenRouter) || !model.apiKey) {
+        await send('El modelo asignado no está listo. Comprueba que sea Gemini, NVIDIA NIM u OpenRouter, esté activo y tenga API Key.');
         return json({ status: 'model_unavailable' });
       }
       const configuredModelId = String(model.modelId || agent.model || '').trim();
@@ -102,10 +103,11 @@ export default {
       const systemInstruction = [identityInstruction, agent.systemPrompt || '', agent.personality ? `Personalidad: ${agent.personality}` : '', agent.description ? `Descripción: ${agent.description}` : ''].filter(Boolean).join('\\n\\n');
       let aiResponse: Response;
       try {
-        if (isNvidia) {
-          aiResponse = await fetch(model.endpoint?.trim() || 'https://integrate.api.nvidia.com/v1/chat/completions', {
+        if (isNvidia || isOpenRouter) {
+          const defaultEndpoint = isOpenRouter ? 'https://openrouter.ai/api/v1/chat/completions' : 'https://integrate.api.nvidia.com/v1/chat/completions';
+          aiResponse = await fetch(model.endpoint?.trim() || defaultEndpoint, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${model.apiKey}` },
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${model.apiKey}`, ...(isOpenRouter ? { 'HTTP-Referer': 'https://anapse.github.io/BOT-IA-PC/', 'X-OpenRouter-Title': 'BOT IA PC' } : {}) },
             body: JSON.stringify({ model: modelId, messages: [...(systemInstruction ? [{ role: 'system', content: systemInstruction }] : []), { role: 'user', content: message }], temperature: 0.7, max_tokens: 2048, stream: false }),
           });
         } else {
@@ -116,7 +118,7 @@ export default {
         }
       } catch { await send('No se pudo conectar con la IA. Inténtalo de nuevo.'); return json({ error: 'AI provider unavailable' }, 502); }
       const result: any = await aiResponse.json().catch(() => ({}));
-      const rawReply = isNvidia
+      const rawReply = (isNvidia || isOpenRouter)
         ? (typeof result?.choices?.[0]?.message?.content === 'string' ? result.choices[0].message.content.trim() : '')
         : (Array.isArray(result?.candidates?.[0]?.content?.parts) ? result.candidates[0].content.parts.map((part: any) => typeof part?.text === 'string' ? part.text : '').join('').trim() : '');
       const reply = formatTelegramText(rawReply);
@@ -194,8 +196,9 @@ export default {
         if (model.connectionType === 'local') return json({ error: 'Los modelos locales todavía no se ejecutan desde este Worker.' }, 400);
         const provider = String(model.provider || '').toLowerCase();
         const isNvidia = provider.includes('nvidia');
+        const isOpenRouter = provider.includes('openrouter');
         const isGemini = provider.includes('gemini') || provider.includes('google');
-        if (!isNvidia && !isGemini) return json({ error: 'Este Worker admite Google Gemini y NVIDIA NIM por ahora.' }, 400);
+        if (!isNvidia && !isOpenRouter && !isGemini) return json({ error: 'Este Worker admite Google Gemini, NVIDIA NIM y OpenRouter por ahora.' }, 400);
         if (!model.apiKey) return json({ error: 'El modelo no tiene API Key guardada. Edítalo y guarda la clave antes de sincronizar.' }, 400);
         const configuredModelId = String(model.modelId || agent.model || '').trim();
         const modelId = isGemini ? configuredModelId.replace(/^models\//i, '') : configuredModelId;
@@ -206,10 +209,11 @@ export default {
         const systemInstruction = [agent.systemPrompt || '', agent.personality ? `Personalidad: ${agent.personality}` : '', agent.description ? `Descripción: ${agent.description}` : ''].filter(Boolean).join('\\n\\n');
         let upstream: Response;
         try {
-          if (isNvidia) {
-            upstream = await fetch(model.endpoint?.trim() || 'https://integrate.api.nvidia.com/v1/chat/completions', {
+          if (isNvidia || isOpenRouter) {
+            const defaultEndpoint = isOpenRouter ? 'https://openrouter.ai/api/v1/chat/completions' : 'https://integrate.api.nvidia.com/v1/chat/completions';
+            upstream = await fetch(model.endpoint?.trim() || defaultEndpoint, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${model.apiKey}` },
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${model.apiKey}`, ...(isOpenRouter ? { 'HTTP-Referer': 'https://anapse.github.io/BOT-IA-PC/', 'X-OpenRouter-Title': 'BOT IA PC' } : {}) },
               body: JSON.stringify({ model: modelId, messages: [...(systemInstruction ? [{ role: 'system', content: systemInstruction }] : []), { role: 'user', content: message }], temperature: 0.7, max_tokens: 2048, stream: false }),
             });
           } else {
@@ -222,12 +226,12 @@ export default {
         const result: any = await upstream.json().catch(() => ({}));
         if (!upstream.ok) {
           const apiMessage = typeof result?.error?.message === 'string' ? result.error.message : (typeof result?.message === 'string' ? result.message : 'El proveedor rechazó la solicitud.');
-          return json({ error: `${isNvidia ? 'NVIDIA NIM' : 'Gemini'} (HTTP ${upstream.status}): ${apiMessage.slice(0, 350)}` }, upstream.status === 429 ? 429 : 502);
+          return json({ error: `${isOpenRouter ? 'OpenRouter' : isNvidia ? 'NVIDIA NIM' : 'Gemini'} (HTTP ${upstream.status}): ${apiMessage.slice(0, 350)}` }, upstream.status === 429 ? 429 : 502);
         }
-        const reply = isNvidia
+        const reply = (isNvidia || isOpenRouter)
           ? (typeof result?.choices?.[0]?.message?.content === 'string' ? result.choices[0].message.content.trim() : '')
           : (Array.isArray(result?.candidates?.[0]?.content?.parts) ? result.candidates[0].content.parts.map((part: any) => typeof part?.text === 'string' ? part.text : '').join('').trim() : '');
-        if (!reply) return json({ error: `${isNvidia ? 'NVIDIA NIM' : 'Gemini'} respondió, pero no devolvió texto. Revisa el modelo o sus permisos.` }, 502);
+        if (!reply) return json({ error: `${isOpenRouter ? 'OpenRouter' : isNvidia ? 'NVIDIA NIM' : 'Gemini'} respondió, pero no devolvió texto. Revisa el modelo o sus permisos.` }, 502);
         return json({ status: 'ok', reply, model: modelId });
       }
 
