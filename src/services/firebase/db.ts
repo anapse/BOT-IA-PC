@@ -24,6 +24,18 @@ export const getCollectionData = async (colName: string) => {
   }
 };
 
+// Strict variant for sync/backup operations: never treat a Firestore permission or network
+// error as an empty collection, because that could overwrite a valid remote snapshot.
+export const getCollectionDataStrict = async (colName: string) => {
+  try {
+    const snapshot = await getDocs(collection(db, colName));
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, colName);
+    throw error;
+  }
+};
+
 export const getDocData = async (colName: string, id: string): Promise<any> => {
   try {
     const docSnap = await getDoc(doc(db, colName, id));
@@ -70,7 +82,7 @@ export const deleteData = async (colName: string, id: string) => {
   try {
     await deleteDoc(doc(db, colName, id));
   } catch (error) {
-    handleFirestoreError(error, OperationType.DELETE, `${colName}/${id}`);
+    handleFirestoreError(error, OperationType.DELETE, colName);
     throw error;
   }
 };
