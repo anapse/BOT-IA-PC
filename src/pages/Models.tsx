@@ -245,6 +245,7 @@ export const ModelsPage = () => {
                   >
                     <option value="Google Gemini">Google Gemini</option>
                     <option value="NVIDIA NIM">NVIDIA NIM</option>
+                    <option value="OpenRouter">OpenRouter</option>
                     <option value="OpenAI">OpenAI</option>
                     <option value="Anthropic">Anthropic</option>
                     <option value="Ollama (Local)">Ollama (Local PC)</option>
@@ -270,7 +271,7 @@ export const ModelsPage = () => {
                 label="Identificador de Modelo (modelId)"
                 value={modelId}
                 onChange={setModelId}
-                placeholder={provider === 'NVIDIA NIM' ? 'meta/llama-3.3-70b-instruct' : 'gemini-1.5-pro, gpt-4o, llama3:8b...' }
+                placeholder={provider === 'NVIDIA NIM' ? 'meta/llama-3.3-70b-instruct' : provider === 'OpenRouter' ? 'openai/gpt-4o, anthropic/claude...' : 'gemini-1.5-pro, gpt-4o, llama3:8b...' }
               />
 
               {connectionType === 'cloud' && (
