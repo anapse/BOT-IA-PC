@@ -32,6 +32,8 @@ export const ModelsPage = () => {
   const [apiKey, setApiKey] = useState('');
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [catalogModels, setCatalogModels] = useState<{ id: string; name: string; contextLength?: number | null }[]>([]);
+  const [loadingCatalog, setLoadingCatalog] = useState(false);
 
   useEffect(() => {
     const unsub = subscribeCollection('modelConfigs', (data) => {
@@ -41,6 +43,21 @@ export const ModelsPage = () => {
     return () => unsub();
   }, []);
 
+  const loadModelCatalog = async () => {
+    if (!apiKey.trim()) { setErrorMsg('Introduce la API Key antes de cargar el catálogo.'); return; }
+    setLoadingCatalog(true); setErrorMsg('');
+    try {
+      const response = await fetch('https://bot-ia-pc.elherreroanapse.workers.dev/models/catalog', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider, apiKey: apiKey.trim() }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'No se pudo cargar el catálogo.');
+      const items = Array.isArray(result.models) ? result.models : [];
+      if (items.length === 0) throw new Error('La API no devolvió modelos disponibles para esta clave.');
+      setCatalogModels(items);
+      const selected = items.find((item: any) => item.id === modelId);
+      if (!selected) { setModelId(items[0].id); if (!name.trim()) setName(items[0].name); }
+    } catch (err: any) { setErrorMsg(err.message || 'Error consultando el catálogo.'); }
+    finally { setLoadingCatalog(false); }
+  };
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !modelId.trim()) {
@@ -240,7 +257,7 @@ export const ModelsPage = () => {
                   <label className="text-xs font-medium text-slate-300">Proveedor</label>
                   <select
                     value={provider}
-                    onChange={(e) => setProvider(e.target.value)}
+                    onChange={(e) => { setProvider(e.target.value); setCatalogModels([]); }}
                     className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-sm text-slate-200 focus:outline-none focus:border-cyan-500"
                   >
                     <option value="Google Gemini">Google Gemini</option>
@@ -271,8 +288,16 @@ export const ModelsPage = () => {
                 label="Identificador de Modelo (modelId)"
                 value={modelId}
                 onChange={setModelId}
-                placeholder={provider === 'NVIDIA NIM' ? 'meta/llama-3.3-70b-instruct' : provider === 'OpenRouter' ? 'openai/gpt-4o, anthropic/claude...' : 'gemini-1.5-pro, gpt-4o, llama3:8b...' }
+                placeholder={provider === 'NVIDIA NIM' ? 'meta/llama-3.3-70b-instruct' : provider === 'OpenRouter' ? 'openai/gpt-4o' : 'gemini-1.5-pro, gpt-4o, llama3:8b...'}
               />
+              {catalogModels.length > 0 && (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-slate-300">Modelos encontrados ({catalogModels.length})</label>
+                  <select value={modelId} onChange={(e) => { const item = catalogModels.find((entry) => entry.id === e.target.value); setModelId(e.target.value); if (item && !name.trim()) setName(item.name); }} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-sm text-slate-200">
+                    {catalogModels.map((item) => <option key={item.id} value={item.id}>{item.name} — {item.id}</option>)}
+                  </select>
+                </div>
+              )}
 
               {connectionType === 'cloud' && (
                 <InputField
@@ -284,6 +309,11 @@ export const ModelsPage = () => {
                 />
               )}
 
+              {connectionType === 'cloud' && ['OpenRouter', 'NVIDIA NIM', 'Google Gemini'].includes(provider) && (
+                <button type="button" onClick={loadModelCatalog} disabled={loadingCatalog || !apiKey.trim()} className="w-full rounded-lg border border-cyan-800/70 bg-cyan-950/30 px-3 py-2 text-sm text-cyan-300 disabled:opacity-50">
+                  {loadingCatalog ? 'Consultando catálogo...' : 'Cargar todos los modelos disponibles'}
+                </button>
+              )}
               {connectionType === 'local' && (
                 <InputField
                   label="Endpoint Local / URL"
