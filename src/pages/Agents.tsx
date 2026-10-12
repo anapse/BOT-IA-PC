@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react';
 import { ActionButton } from '../components/ActionButton';
 import { Card } from '../components/Card';
 import { InputField } from '../components/InputField';
-import { subscribeCollection, addData, updateData, deleteData } from '../services/firebase/db';
-import { Bot, Plus, Trash2, Edit2, Play, Pause, Search } from 'lucide-react';
+import { subscribeCollection, addData, updateData, deleteData, getDocData } from '../services/firebase/db';
+import { Bot, Plus, Trash2, Edit2, Play, Pause, Search, Send, MessageCircle } from 'lucide-react';
+import { sendAgentChatMessage } from '../services/worker/client';
 
 interface Agent {
   id: string;
@@ -22,6 +23,12 @@ export const AgentsPage = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
+  const [chatAgent, setChatAgent] = useState<Agent | null>(null);
+  const [chatMessage, setChatMessage] = useState('');
+  const [chatReply, setChatReply] = useState('');
+  const [chatError, setChatError] = useState('');
+  const [chatModel, setChatModel] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
 
   // Form state
   const [name, setName] = useState('');
@@ -101,6 +108,26 @@ export const AgentsPage = () => {
       setErrorMsg(err.message || 'Error al guardar el agente');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleTestChat = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!chatAgent || !chatMessage.trim()) return;
+    setChatLoading(true);
+    setChatError('');
+    setChatReply('');
+    try {
+      const saved = await getDocData('appSettings', 'workerConfig');
+      const workerUrl = String(saved?.value || 'https://bot-ia-pc.elherreroanapse.workers.dev').replace(/\\/$/, '');
+      const result = await sendAgentChatMessage(workerUrl, chatAgent.id, chatMessage.trim());
+      setChatReply(result.reply);
+      setChatModel(result.model);
+      setChatMessage('');
+    } catch (err: any) {
+      setChatError(err?.message || 'No se pudo enviar el mensaje.');
+    } finally {
+      setChatLoading(false);
     }
   };
 
@@ -209,6 +236,13 @@ export const AgentsPage = () => {
                 </button>
                 <div className="flex items-center gap-2">
                   <button
+                    onClick={() => { setChatAgent(agent); setChatMessage(''); setChatReply(''); setChatError(''); setChatModel(''); }}
+                    className="p-1.5 text-slate-400 hover:text-emerald-400 hover:bg-slate-800 rounded transition-colors"
+                    title="Probar conversación con Gemini"
+                  >
+                    <MessageCircle size={15} />
+                  </button>
+                  <button
                     onClick={() => openEditModal(agent)}
                     className="p-1.5 text-slate-400 hover:text-cyan-400 hover:bg-slate-800 rounded transition-colors"
                     title="Editar agente"
@@ -226,6 +260,32 @@ export const AgentsPage = () => {
               </div>
             </Card>
           ))}
+        </div>
+      )}
+
+      {/* Modal para probar conversación con el agente */}
+      {chatAgent && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-xl overflow-hidden shadow-2xl">
+            <div className="p-5 border-b border-slate-800 flex justify-between items-center">
+              <div>
+                <h3 className="font-semibold text-slate-100 text-lg">Probar agente: {chatAgent.name}</h3>
+                <p className="text-xs text-slate-400 mt-1">La petición se procesa en el Worker; la API Key no se envía al navegador.</p>
+              </div>
+              <button type="button" onClick={() => setChatAgent(null)} className="text-slate-400 hover:text-slate-200">✕</button>
+            </div>
+            <div className="p-5 space-y-4">
+              {chatReply && <div className="rounded-lg border border-emerald-800/50 bg-emerald-950/20 p-4"><div className="text-xs text-emerald-300 mb-2">Respuesta de {chatModel || chatAgent.model}</div><p className="text-sm text-slate-200 whitespace-pre-wrap">{chatReply}</p></div>}
+              {chatError && <div className="rounded-lg border border-red-800/60 bg-red-950/40 p-3 text-xs text-red-300">{chatError}</div>}
+              <form onSubmit={handleTestChat} className="space-y-3">
+                <textarea value={chatMessage} onChange={(e) => setChatMessage(e.target.value)} placeholder="Escribe un mensaje para probar este agente..." maxLength={12000} rows={3} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-sm text-slate-200 focus:outline-none focus:border-cyan-500 resize-y" required />
+                <div className="flex justify-between items-center gap-3">
+                  <span className="text-xs text-slate-500">Usa la configuración sincronizada en Cloudflare KV.</span>
+                  <button type="submit" disabled={chatLoading || !chatMessage.trim()} className="inline-flex items-center gap-2 rounded-lg px-4 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white text-sm"><Send size={14} /> {chatLoading ? 'Consultando Gemini...' : 'Enviar prueba'}</button>
+                </div>
+              </form>
+            </div>
+          </div>
         </div>
       )}
 
