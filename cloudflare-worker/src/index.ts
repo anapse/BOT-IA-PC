@@ -110,7 +110,7 @@ export default {
         return json({ error: 'AI request failed' }, 502);
       }
       // Telegram's message limit is 4096 characters. Keep a safety margin.
-      const chunks = reply.match(/[\\s\\S]{1,3900}/g) || [''];
+      const chunks = reply.match(/[\s\S]{1,3900}/g) || [''];
       for (const chunk of chunks) {
         const sent = await send(chunk);
         if (!sent.ok) return json({ error: 'Telegram sendMessage failed' }, 502);
