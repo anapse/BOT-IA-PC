@@ -84,13 +84,16 @@ export default {
       }
       const models = Array.isArray(config.models) ? config.models : [];
       const model = models.find((item: any) => item?.status === 'activo' && (item?.modelId === agent.model || item?.id === agent.model || item?.name === agent.model));
-      if (!model || model.connectionType === 'local' || (!String(model.provider || '').toLowerCase().includes('gemini') && !String(model.provider || '').toLowerCase().includes('google')) || !model.apiKey) {
-        await send('El modelo asignado no está listo. Comprueba que sea Gemini, esté activo y tenga API Key.');
+      const provider = String(model?.provider || '').toLowerCase();
+      const isNvidia = provider.includes('nvidia');
+      const isGemini = provider.includes('gemini') || provider.includes('google');
+      if (!model || model.connectionType === 'local' || (!isGemini && !isNvidia) || !model.apiKey) {
+        await send('El modelo asignado no está listo. Comprueba que sea Gemini o NVIDIA NIM, esté activo y tenga API Key.');
         return json({ status: 'model_unavailable' });
       }
       const configuredModelId = String(model.modelId || agent.model || '').trim();
-      const modelId = configuredModelId.replace(/^models\//i, '');
-      if (!/^gemini-[a-zA-Z0-9._-]+$/i.test(modelId)) {
+      const modelId = isGemini ? configuredModelId.replace(/^models\//i, '') : configuredModelId;
+      if (isGemini && !/^gemini-[a-zA-Z0-9._-]+$/i.test(modelId)) {
         await send(`ID de modelo Gemini no válido: ${configuredModelId}`);
         return json({ status: 'invalid_model' });
       }
@@ -99,13 +102,23 @@ export default {
       const systemInstruction = [identityInstruction, agent.systemPrompt || '', agent.personality ? `Personalidad: ${agent.personality}` : '', agent.description ? `Descripción: ${agent.description}` : ''].filter(Boolean).join('\\n\\n');
       let aiResponse: Response;
       try {
-        aiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelId)}:generateContent?key=${encodeURIComponent(model.apiKey)}`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...(systemInstruction ? { systemInstruction: { parts: [{ text: systemInstruction }] } } : {}), contents: [{ role: 'user', parts: [{ text: message }] }], generationConfig: { temperature: 0.7, maxOutputTokens: 2048 } }),
-        });
-      } catch { await send('No se pudo conectar con la IA. Inténtalo de nuevo.'); return json({ error: 'Gemini unavailable' }, 502); }
+        if (isNvidia) {
+          aiResponse = await fetch(model.endpoint?.trim() || 'https://integrate.api.nvidia.com/v1/chat/completions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${model.apiKey}` },
+            body: JSON.stringify({ model: modelId, messages: [...(systemInstruction ? [{ role: 'system', content: systemInstruction }] : []), { role: 'user', content: message }], temperature: 0.7, max_tokens: 2048, stream: false }),
+          });
+        } else {
+          aiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelId)}:generateContent?key=${encodeURIComponent(model.apiKey)}`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...(systemInstruction ? { systemInstruction: { parts: [{ text: systemInstruction }] } } : {}), contents: [{ role: 'user', parts: [{ text: message }] }], generationConfig: { temperature: 0.7, maxOutputTokens: 2048 } }),
+          });
+        }
+      } catch { await send('No se pudo conectar con la IA. Inténtalo de nuevo.'); return json({ error: 'AI provider unavailable' }, 502); }
       const result: any = await aiResponse.json().catch(() => ({}));
-      const rawReply = Array.isArray(result?.candidates?.[0]?.content?.parts) ? result.candidates[0].content.parts.map((part: any) => typeof part?.text === 'string' ? part.text : '').join('').trim() : '';
+      const rawReply = isNvidia
+        ? (typeof result?.choices?.[0]?.message?.content === 'string' ? result.choices[0].message.content.trim() : '')
+        : (Array.isArray(result?.candidates?.[0]?.content?.parts) ? result.candidates[0].content.parts.map((part: any) => typeof part?.text === 'string' ? part.text : '').join('').trim() : '');
       const reply = formatTelegramText(rawReply);
       if (!aiResponse.ok || !reply) {
         await send(aiResponse.status === 429 ? 'La IA está ocupada. Inténtalo en un momento.' : 'La IA no pudo responder. Revisa el modelo configurado.');
@@ -179,32 +192,42 @@ export default {
         const model = models.find((item: any) => item?.status === 'activo' && (item?.modelId === agent.model || item?.id === agent.model || item?.name === agent.model));
         if (!model) return json({ error: `No se encontró un modelo activo para "${agent.model || 'sin modelo'}". Comprueba la asignación y sincroniza otra vez.` }, 400);
         if (model.connectionType === 'local') return json({ error: 'Los modelos locales todavía no se ejecutan desde este Worker.' }, 400);
-        if (!String(model.provider || '').toLowerCase().includes('gemini') && !String(model.provider || '').toLowerCase().includes('google')) return json({ error: 'Este endpoint de prueba solo admite Google Gemini por ahora.' }, 400);
+        const provider = String(model.provider || '').toLowerCase();
+        const isNvidia = provider.includes('nvidia');
+        const isGemini = provider.includes('gemini') || provider.includes('google');
+        if (!isNvidia && !isGemini) return json({ error: 'Este Worker admite Google Gemini y NVIDIA NIM por ahora.' }, 400);
         if (!model.apiKey) return json({ error: 'El modelo no tiene API Key guardada. Edítalo y guarda la clave antes de sincronizar.' }, 400);
-        // Google puede mostrar el identificador como "gemini-..." o como recurso "models/gemini-...".
-        // Normalizamos espacios y el prefijo para enviar solo el ID que espera generateContent.
         const configuredModelId = String(model.modelId || agent.model || '').trim();
-      const modelId = configuredModelId.replace(/^models\//i, '');
-        if (!/^gemini-[a-zA-Z0-9._-]+$/i.test(modelId)) {
-          return json({
-            error: `El ID de modelo Gemini no es válido: "${configuredModelId}". Usa el ID técnico, por ejemplo gemini-3.5-flash-lite, sin URL ni texto adicional.`,
-          }, 400);
+        const modelId = isGemini ? configuredModelId.replace(/^models\//i, '') : configuredModelId;
+        if (isGemini && !/^gemini-[a-zA-Z0-9._-]+$/i.test(modelId)) {
+          return json({ error: `El ID de modelo Gemini no es válido: "${configuredModelId}". Usa el ID técnico, por ejemplo gemini-3.5-flash-lite, sin URL ni texto adicional.` }, 400);
         }
+        if (isNvidia && !modelId) return json({ error: 'Configura el ID del modelo NVIDIA, por ejemplo meta/llama-3.3-70b-instruct.' }, 400);
         const systemInstruction = [agent.systemPrompt || '', agent.personality ? `Personalidad: ${agent.personality}` : '', agent.description ? `Descripción: ${agent.description}` : ''].filter(Boolean).join('\\n\\n');
         let upstream: Response;
         try {
-          upstream = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelId)}:generateContent?key=${encodeURIComponent(model.apiKey)}`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...(systemInstruction ? { systemInstruction: { parts: [{ text: systemInstruction }] } } : {}), contents: [{ role: 'user', parts: [{ text: message }] }], generationConfig: { temperature: 0.7, maxOutputTokens: 2048 } }),
-          });
-        } catch { return json({ error: 'No se pudo conectar con la API de Gemini.' }, 502); }
+          if (isNvidia) {
+            upstream = await fetch(model.endpoint?.trim() || 'https://integrate.api.nvidia.com/v1/chat/completions', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${model.apiKey}` },
+              body: JSON.stringify({ model: modelId, messages: [...(systemInstruction ? [{ role: 'system', content: systemInstruction }] : []), { role: 'user', content: message }], temperature: 0.7, max_tokens: 2048, stream: false }),
+            });
+          } else {
+            upstream = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelId)}:generateContent?key=${encodeURIComponent(model.apiKey)}`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ...(systemInstruction ? { systemInstruction: { parts: [{ text: systemInstruction }] } } : {}), contents: [{ role: 'user', parts: [{ text: message }] }], generationConfig: { temperature: 0.7, maxOutputTokens: 2048 } }),
+            });
+          }
+        } catch { return json({ error: 'No se pudo conectar con el proveedor de IA.' }, 502); }
         const result: any = await upstream.json().catch(() => ({}));
         if (!upstream.ok) {
-          const apiMessage = typeof result?.error?.message === 'string' ? result.error.message : 'Google Gemini rechazó la solicitud.';
-          return json({ error: `Gemini (HTTP ${upstream.status}): ${apiMessage.slice(0, 350)}` }, upstream.status === 429 ? 429 : 502);
+          const apiMessage = typeof result?.error?.message === 'string' ? result.error.message : (typeof result?.message === 'string' ? result.message : 'El proveedor rechazó la solicitud.');
+          return json({ error: `${isNvidia ? 'NVIDIA NIM' : 'Gemini'} (HTTP ${upstream.status}): ${apiMessage.slice(0, 350)}` }, upstream.status === 429 ? 429 : 502);
         }
-        const reply = Array.isArray(result?.candidates?.[0]?.content?.parts) ? result.candidates[0].content.parts.map((part: any) => typeof part?.text === 'string' ? part.text : '').join('').trim() : '';
-        if (!reply) return json({ error: 'Gemini respondió, pero no devolvió texto. Revisa el modelo o sus permisos.' }, 502);
+        const reply = isNvidia
+          ? (typeof result?.choices?.[0]?.message?.content === 'string' ? result.choices[0].message.content.trim() : '')
+          : (Array.isArray(result?.candidates?.[0]?.content?.parts) ? result.candidates[0].content.parts.map((part: any) => typeof part?.text === 'string' ? part.text : '').join('').trim() : '');
+        if (!reply) return json({ error: `${isNvidia ? 'NVIDIA NIM' : 'Gemini'} respondió, pero no devolvió texto. Revisa el modelo o sus permisos.` }, 502);
         return json({ status: 'ok', reply, model: modelId });
       }
 
