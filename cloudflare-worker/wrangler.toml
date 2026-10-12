@@ -1,9 +1,10 @@
-name = "bot-ia-pc-worker"
+name = "bot-ia-pc"
 main = "src/index.ts"
-compatibility_date = "2024-01-01"
+compatibility_date = "2026-10-12"
 
-[kv_namespaces]
-WORKER_KV = "YOUR_KV_NAMESPACE_ID"
+[[kv_namespaces]]
+binding = "WORKER_KV"
+id = "251519b058a64f3ab5136b0b24b3fc56"
 
 [vars]
 FIREBASE_PROJECT_ID = "gen-lang-client-0164582744"
