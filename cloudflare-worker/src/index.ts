@@ -7,6 +7,42 @@ const ALLOWED_ORIGINS = new Set([
   'http://localhost:3000',
 ]);
 
+/**
+ * Telegram is sent plain text (without parse_mode), so normalize common Markdown
+ * and LaTeX from model output instead of exposing formatting markers to users.
+ */
+function formatTelegramText(value: string): string {
+  return value
+    // Undo literal escaping sometimes returned by models.
+    .replace(/\\([*_#\[\]()])/g, '$1')
+    // Markdown links: keep the visible label (including emoji), drop the URL.
+    .replace(/!?\[([^\]]*)\]\((?:[^()]|\([^()]*\))*\)/g, '$1')
+    // Display/inline math delimiters.
+    .replace(/\$\$([\s\S]*?)\$\$/g, '$1')
+    .replace(/\$([^$\n]+)\$/g, '$1')
+    // Common LaTeX commands that are useful in plain-text Telegram.
+    .replace(/\\text\s*\{([^{}]*)\}/g, '$1')
+    .replace(/\\mathrm\s*\{([^{}]*)\}/g, '$1')
+    .replace(/\\frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}/g, '($1 ÷ $2)')
+    .replace(/\\times\b/g, '×')
+    .replace(/\\cdot\b/g, '·')
+    .replace(/\\div\b/g, '÷')
+    .replace(/\\quad\b/g, ' ')
+    .replace(/\\left\b|\\right\b/g, '')
+    .replace(/\\,/g, ' ')
+    // Headings and emphasis markers; preserve their text.
+    .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+    .replace(/\*\*(.*?)\*\*/gs, '$1')
+    .replace(/__(.*?)__/gs, '$1')
+    .replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '$1')
+    .replace(/(?<!_)_([^_\n]+)_(?!_)/g, '$1')
+    .replace(/~~(.*?)~~/gs, '$1')
+    .replace(/^\s*[-*_]{3,}\s*$/gm, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 export default {
   async fetch(request: Request, env: any) {
     const url = new URL(request.url);
@@ -29,7 +65,7 @@ export default {
       return json({ status: 'ok', version: '1.0.0' });
     }
 
-    const telegramMatch = url.pathname.match(/^\/webhook\/telegram\/([^/]+)$/);
+    const telegramMatch = url.pathname.match(/^\\/webhook\\/telegram\\/([^/]+)$/);
     if (telegramMatch && request.method === 'POST') {
       let update: any;
       try { update = await request.json(); } catch { return json({ error: 'Invalid update' }, 400); }
@@ -53,12 +89,12 @@ export default {
         return json({ status: 'model_unavailable' });
       }
       const configuredModelId = String(model.modelId || agent.model || '').trim();
-      const modelId = configuredModelId.replace(/^models\//i, '');
+      const modelId = configuredModelId.replace(/^models\\//i, '');
       if (!/^gemini-[a-zA-Z0-9._-]+$/i.test(modelId)) {
         await send(`ID de modelo Gemini no válido: ${configuredModelId}`);
         return json({ status: 'invalid_model' });
       }
-      const systemInstruction = [agent.systemPrompt || '', agent.personality ? `Personalidad: ${agent.personality}` : '', agent.description ? `Descripción: ${agent.description}` : ''].filter(Boolean).join('\n\n');
+      const systemInstruction = [agent.systemPrompt || '', agent.personality ? `Personalidad: ${agent.personality}` : '', agent.description ? `Descripción: ${agent.description}` : ''].filter(Boolean).join('\\n\\n');
       let aiResponse: Response;
       try {
         aiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelId)}:generateContent?key=${encodeURIComponent(model.apiKey)}`, {
@@ -67,12 +103,15 @@ export default {
         });
       } catch { await send('No se pudo conectar con la IA. Inténtalo de nuevo.'); return json({ error: 'Gemini unavailable' }, 502); }
       const result: any = await aiResponse.json().catch(() => ({}));
-      const reply = Array.isArray(result?.candidates?.[0]?.content?.parts) ? result.candidates[0].content.parts.map((part: any) => typeof part?.text === 'string' ? part.text : '').join('').trim() : '';
+      const rawReply = Array.isArray(result?.candidates?.[0]?.content?.parts) ? result.candidates[0].content.parts.map((part: any) => typeof part?.text === 'string' ? part.text : '').join('').trim() : '';
+      const reply = formatTelegramText(rawReply);
       if (!aiResponse.ok || !reply) {
         await send(aiResponse.status === 429 ? 'La IA está ocupada. Inténtalo en un momento.' : 'La IA no pudo responder. Revisa el modelo configurado.');
         return json({ error: 'AI request failed' }, 502);
       }
-      for (const chunk of (reply.match(/[\s\S]{1,4000}/g) || [''])) {
+      // Telegram's message limit is 4096 characters. Keep a safety margin.
+      const chunks = reply.match(/[\\s\\S]{1,3900}/g) || [''];
+      for (const chunk of chunks) {
         const sent = await send(chunk);
         if (!sent.ok) return json({ error: 'Telegram sendMessage failed' }, 502);
       }
@@ -143,13 +182,13 @@ export default {
         // Google puede mostrar el identificador como "gemini-..." o como recurso "models/gemini-...".
         // Normalizamos espacios y el prefijo para enviar solo el ID que espera generateContent.
         const configuredModelId = String(model.modelId || agent.model || '').trim();
-        const modelId = configuredModelId.replace(/^models\//i, '');
+        const modelId = configuredModelId.replace(/^models\\//i, '');
         if (!/^gemini-[a-zA-Z0-9._-]+$/i.test(modelId)) {
           return json({
             error: `El ID de modelo Gemini no es válido: "${configuredModelId}". Usa el ID técnico, por ejemplo gemini-3.5-flash-lite, sin URL ni texto adicional.`,
           }, 400);
         }
-        const systemInstruction = [agent.systemPrompt || '', agent.personality ? `Personalidad: ${agent.personality}` : '', agent.description ? `Descripción: ${agent.description}` : ''].filter(Boolean).join('\n\n');
+        const systemInstruction = [agent.systemPrompt || '', agent.personality ? `Personalidad: ${agent.personality}` : '', agent.description ? `Descripción: ${agent.description}` : ''].filter(Boolean).join('\\n\\n');
         let upstream: Response;
         try {
           upstream = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelId)}:generateContent?key=${encodeURIComponent(model.apiKey)}`, {
