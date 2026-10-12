@@ -2,9 +2,9 @@ import { useState, useEffect } from 'react';
 import { Card } from '../components/Card';
 import { InputField } from '../components/InputField';
 import { ActionButton } from '../components/ActionButton';
-import { checkWorkerStatus, syncWorkerConfig } from '../services/worker/client';
+import { checkWorkerStatus, syncWorkerConfig, readWorkerConfig } from '../services/worker/client';
 import { getDocData, setDocData, getCollectionData } from '../services/firebase/db';
-import { Cpu, CheckCircle2, XCircle, RefreshCw, UploadCloud } from 'lucide-react';
+import { Cpu, CheckCircle2, XCircle, RefreshCw, UploadCloud, DownloadCloud } from 'lucide-react';
 
 const DEFAULT_WORKER_URL = 'https://bot-ia-pc.elherreroanapse.workers.dev';
 
@@ -14,13 +14,12 @@ export const WorkerPage = () => {
   const [statusType, setStatusType] = useState<'success' | 'error' | 'info' | null>(null);
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [verifying, setVerifying] = useState(false);
   const [savedFeedback, setSavedFeedback] = useState(false);
 
   useEffect(() => {
     getDocData('appSettings', 'workerConfig').then(data => {
-      if (data && data.value) {
-        setUrl(data.value);
-      }
+      if (data && data.value) setUrl(data.value);
     });
   }, []);
 
@@ -46,7 +45,6 @@ export const WorkerPage = () => {
       setStatusType('error');
       return;
     }
-
     setLoading(true);
     setStatus(null);
     try {
@@ -67,21 +65,18 @@ export const WorkerPage = () => {
       setStatusType('error');
       return;
     }
-
     setSyncing(true);
     setStatus(null);
     try {
       const agents = await getCollectionData('agents');
       const models = await getCollectionData('modelConfigs');
       const connections = await getCollectionData('telegramConnections');
-
       const payload = {
         agents: agents || [],
         models: models || [],
         connections: connections || [],
         syncedAt: new Date().toISOString(),
       };
-
       await syncWorkerConfig(url.trim(), payload);
       setStatus('¡Configuración y agentes sincronizados exitosamente con Cloudflare KV!');
       setStatusType('success');
@@ -90,6 +85,30 @@ export const WorkerPage = () => {
       setStatusType('error');
     } finally {
       setSyncing(false);
+    }
+  };
+
+  const handleVerifyKV = async () => {
+    if (!url.trim()) {
+      setStatus('Introduce la URL del Worker antes de verificar.');
+      setStatusType('error');
+      return;
+    }
+    setVerifying(true);
+    setStatus(null);
+    try {
+      const result = await readWorkerConfig(url.trim());
+      const config = result?.config;
+      if (result?.status !== 'ok' || !config || !Array.isArray(config.agents)) {
+        throw new Error('KV respondió, pero la estructura de la configuración no es válida.');
+      }
+      setStatus(`Lectura de KV correcta. Agentes: ${config.agents.length}; modelos: ${Array.isArray(config.models) ? config.models.length : 0}; conexiones: ${Array.isArray(config.connections) ? config.connections.length : 0}. Última sincronización: ${config.syncedAt || 'sin fecha'}.`);
+      setStatusType('success');
+    } catch (err: any) {
+      setStatus(`No se pudo verificar la recuperación desde KV: ${err.message}`);
+      setStatusType('error');
+    } finally {
+      setVerifying(false);
     }
   };
 
@@ -127,6 +146,12 @@ export const WorkerPage = () => {
               onClick={handleSyncAgents}
               variant="secondary"
               icon={<UploadCloud size={14} className={syncing ? 'animate-spin' : ''} />}
+            />
+            <ActionButton
+              label={verifying ? "Verificando..." : "Verificar lectura de KV"}
+              onClick={handleVerifyKV}
+              variant="secondary"
+              icon={<DownloadCloud size={14} className={verifying ? 'animate-spin' : ''} />}
             />
           </div>
 
