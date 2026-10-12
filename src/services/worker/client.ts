@@ -72,3 +72,17 @@ export const readWorkerConfig = async (workerUrl: string) => {
 
   return await response.json();
 };
+
+export const sendAgentChatMessage = async (workerUrl: string, agentId: string, message: string): Promise<{ reply: string; model: string }> => {
+  const token = await getAdminToken();
+  const baseUrl = workerUrl.replace(/\/$/, '');
+  const response = await fetch(`${baseUrl}/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ agentId, message }),
+  });
+  const result = await response.json().catch(() => ({} as any));
+  if (!response.ok) throw new Error(typeof result?.error === 'string' ? result.error : `Error del Worker (HTTP ${response.status})`);
+  if (typeof result?.reply !== 'string') throw new Error('La respuesta del Worker no contiene texto.');
+  return { reply: result.reply, model: String(result.model || '') };
+}
