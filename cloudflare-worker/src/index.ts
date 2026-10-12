@@ -40,7 +40,7 @@ export default {
       const chatId = incoming?.chat?.id;
       const message = typeof incoming?.text === 'string' ? incoming.text.trim() : '';
       if (!chatId || !message) return json({ status: 'ignored' });
-      const send = async (text: string) => fetch(\`https://api.telegram.org/bot\${connection.botToken}/sendMessage\`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: chatId, text }) });
+      const send = async (text: string) => fetch(`https://api.telegram.org/bot${connection.botToken}/sendMessage`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: chatId, text }) });
       const agent = Array.isArray(config.agents) ? config.agents.find((item: any) => item?.id === connection.agentId) : null;
       if (!agent || (agent.status && agent.status !== 'activo')) {
         await send(!agent ? 'Este bot no tiene un agente válido asignado. Revisa BOT IA PC.' : 'El agente asignado está pausado o inactivo.');
@@ -55,13 +55,13 @@ export default {
       const configuredModelId = String(model.modelId || agent.model || '').trim();
       const modelId = configuredModelId.replace(/^models\//i, '');
       if (!/^gemini-[a-zA-Z0-9._-]+$/i.test(modelId)) {
-        await send(\`ID de modelo Gemini no válido: \${configuredModelId}\`);
+        await send(`ID de modelo Gemini no válido: ${configuredModelId}`);
         return json({ status: 'invalid_model' });
       }
-      const systemInstruction = [agent.systemPrompt || '', agent.personality ? \`Personalidad: \${agent.personality}\` : '', agent.description ? \`Descripción: \${agent.description}\` : ''].filter(Boolean).join('\n\n');
+      const systemInstruction = [agent.systemPrompt || '', agent.personality ? `Personalidad: ${agent.personality}` : '', agent.description ? `Descripción: ${agent.description}` : ''].filter(Boolean).join('\n\n');
       let aiResponse: Response;
       try {
-        aiResponse = await fetch(\`https://generativelanguage.googleapis.com/v1beta/models/\${encodeURIComponent(modelId)}:generateContent?key=\${encodeURIComponent(model.apiKey)}\`, {
+        aiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelId)}:generateContent?key=${encodeURIComponent(model.apiKey)}`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ...(systemInstruction ? { systemInstruction: { parts: [{ text: systemInstruction }] } } : {}), contents: [{ role: 'user', parts: [{ text: message }] }], generationConfig: { temperature: 0.7, maxOutputTokens: 2048 } }),
         });
@@ -188,8 +188,8 @@ export default {
             continue;
           }
           try {
-            const webhookUrl = \`\${url.origin}/webhook/telegram/\${encodeURIComponent(connection.id)}\`;
-            const telegramResponse = await fetch(\`https://api.telegram.org/bot\${connection.botToken}/setWebhook\`, {
+            const webhookUrl = `${url.origin}/webhook/telegram/${encodeURIComponent(connection.id)}`;
+            const telegramResponse = await fetch(`https://api.telegram.org/bot${connection.botToken}/setWebhook`, {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ url: webhookUrl, allowed_updates: ['message'] }),
             });
