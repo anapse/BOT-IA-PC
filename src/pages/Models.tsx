@@ -194,7 +194,7 @@ export const ModelsPage = () => {
                   <Pencil size={13} /> Editar
                 </button>
                 <button
-                  onClick={() => toggleStatus(m)
+                  onClick={() => toggleStatus(m)}
                   className="text-xs text-slate-400 hover:text-purple-400 transition-colors"
                 >
                   {m.status === 'activo' ? 'Deshabilitar' : 'Habilitar'}
