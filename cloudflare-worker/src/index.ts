@@ -29,6 +29,56 @@ export default {
       return json({ status: 'ok', version: '1.0.0' });
     }
 
+    const telegramMatch = url.pathname.match(/^\/webhook\/telegram\/([^/]+)$/);
+    if (telegramMatch && request.method === 'POST') {
+      let update: any;
+      try { update = await request.json(); } catch { return json({ error: 'Invalid update' }, 400); }
+      const config = await getStorage(env).getConfig();
+      const connection = Array.isArray(config.connections) ? config.connections.find((item: any) => item?.id === decodeURIComponent(telegramMatch[1])) : null;
+      if (!connection || connection.status !== 'activo' || !connection.botToken) return json({ error: 'Bot no encontrado o inactivo' }, 404);
+      const incoming = update?.message;
+      const chatId = incoming?.chat?.id;
+      const message = typeof incoming?.text === 'string' ? incoming.text.trim() : '';
+      if (!chatId || !message) return json({ status: 'ignored' });
+      const send = async (text: string) => fetch(\`https://api.telegram.org/bot\${connection.botToken}/sendMessage\`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: chatId, text }) });
+      const agent = Array.isArray(config.agents) ? config.agents.find((item: any) => item?.id === connection.agentId) : null;
+      if (!agent || (agent.status && agent.status !== 'activo')) {
+        await send(!agent ? 'Este bot no tiene un agente válido asignado. Revisa BOT IA PC.' : 'El agente asignado está pausado o inactivo.');
+        return json({ status: 'agent_unavailable' });
+      }
+      const models = Array.isArray(config.models) ? config.models : [];
+      const model = models.find((item: any) => item?.status === 'activo' && (item?.modelId === agent.model || item?.id === agent.model || item?.name === agent.model));
+      if (!model || model.connectionType === 'local' || (!String(model.provider || '').toLowerCase().includes('gemini') && !String(model.provider || '').toLowerCase().includes('google')) || !model.apiKey) {
+        await send('El modelo asignado no está listo. Comprueba que sea Gemini, esté activo y tenga API Key.');
+        return json({ status: 'model_unavailable' });
+      }
+      const configuredModelId = String(model.modelId || agent.model || '').trim();
+      const modelId = configuredModelId.replace(/^models\//i, '');
+      if (!/^gemini-[a-zA-Z0-9._-]+$/i.test(modelId)) {
+        await send(\`ID de modelo Gemini no válido: \${configuredModelId}\`);
+        return json({ status: 'invalid_model' });
+      }
+      const systemInstruction = [agent.systemPrompt || '', agent.personality ? \`Personalidad: \${agent.personality}\` : '', agent.description ? \`Descripción: \${agent.description}\` : ''].filter(Boolean).join('\n\n');
+      let aiResponse: Response;
+      try {
+        aiResponse = await fetch(\`https://generativelanguage.googleapis.com/v1beta/models/\${encodeURIComponent(modelId)}:generateContent?key=\${encodeURIComponent(model.apiKey)}\`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...(systemInstruction ? { systemInstruction: { parts: [{ text: systemInstruction }] } } : {}), contents: [{ role: 'user', parts: [{ text: message }] }], generationConfig: { temperature: 0.7, maxOutputTokens: 2048 } }),
+        });
+      } catch { await send('No se pudo conectar con la IA. Inténtalo de nuevo.'); return json({ error: 'Gemini unavailable' }, 502); }
+      const result: any = await aiResponse.json().catch(() => ({}));
+      const reply = Array.isArray(result?.candidates?.[0]?.content?.parts) ? result.candidates[0].content.parts.map((part: any) => typeof part?.text === 'string' ? part.text : '').join('').trim() : '';
+      if (!aiResponse.ok || !reply) {
+        await send(aiResponse.status === 429 ? 'La IA está ocupada. Inténtalo en un momento.' : 'La IA no pudo responder. Revisa el modelo configurado.');
+        return json({ error: 'AI request failed' }, 502);
+      }
+      for (const chunk of (reply.match(/[\s\S]{1,4000}/g) || [''])) {
+        const sent = await send(chunk);
+        if (!sent.ok) return json({ error: 'Telegram sendMessage failed' }, 502);
+      }
+      return json({ status: 'ok' });
+    }
+
     if ((url.pathname === '/sync' && request.method === 'POST') ||
         (url.pathname === '/config' && request.method === 'GET') ||
         (url.pathname === '/chat' && request.method === 'POST')) {
@@ -129,7 +179,28 @@ export default {
       }
 
       await storage.saveConfig(config);
-      return json({ status: 'synced' });
+      const telegramWebhooks = [];
+      if (Array.isArray(config.connections)) {
+        for (const connection of config.connections) {
+          if (!connection?.id || !connection?.botToken) continue;
+          if (connection.status !== 'activo') {
+            telegramWebhooks.push({ id: connection.id, status: 'inactive' });
+            continue;
+          }
+          try {
+            const webhookUrl = \`\${url.origin}/webhook/telegram/\${encodeURIComponent(connection.id)}\`;
+            const telegramResponse = await fetch(\`https://api.telegram.org/bot\${connection.botToken}/setWebhook\`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ url: webhookUrl, allowed_updates: ['message'] }),
+            });
+            const telegramResult: any = await telegramResponse.json().catch(() => ({}));
+            telegramWebhooks.push({ id: connection.id, status: telegramResponse.ok && telegramResult?.ok ? 'registered' : 'error', description: telegramResult?.description });
+          } catch {
+            telegramWebhooks.push({ id: connection.id, status: 'error', description: 'No se pudo contactar con Telegram.' });
+          }
+        }
+      }
+      return json({ status: 'synced', telegramWebhooks });
     }
 
     return respond('Not Found', 404);
