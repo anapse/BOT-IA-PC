@@ -1,4 +1,4 @@
-name: Deploy Web App
+name: Deploy Web App to Firebase Hosting
 on:
   push:
     branches:
@@ -7,18 +7,11 @@ on:
       - 'cloudflare-worker/**'
       - 'worker/**'
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: 'pages'
-  cancel-in-progress: false
-
 jobs:
   build_and_deploy:
     runs-on: ubuntu-latest
+    env:
+      FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_BOT_IA_PC }}
     steps:
       - uses: actions/checkout@v4
 
@@ -34,28 +27,18 @@ jobs:
       - name: Build
         run: npm run build
 
-      # If Firebase Service Account secret is available, deploy to Firebase Hosting
+      - name: Check Firebase Service Account Credential
+        if: env.FIREBASE_SERVICE_ACCOUNT == ''
+        run: |
+          echo "::error::Falta la credencial administrativa FIREBASE_SERVICE_ACCOUNT_BOT_IA_PC en los secretos de GitHub."
+          echo "Para desplegar en Firebase Hosting (gen-lang-client-0164582744), debes agregar el secreto de repositorio en GitHub con la clave privada JSON de la cuenta de servicio de Firebase."
+          exit 1
+
       - name: Deploy to Firebase Hosting
-        if: "${{ secrets.FIREBASE_SERVICE_ACCOUNT_BOT_IA_PC != '' }}"
+        if: env.FIREBASE_SERVICE_ACCOUNT != ''
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_BOT_IA_PC }}
           projectId: gen-lang-client-0164582744
-        env:
-          FIREBASE_CLI_PREVIEWS: hostingchannels
-
-      # Native zero-secret fallback: Deploy to GitHub Pages automatically
-      - name: Setup Pages
-        if: "${{ secrets.FIREBASE_SERVICE_ACCOUNT_BOT_IA_PC == '' }}"
-        uses: actions/configure-pages@v5
-
-      - name: Upload artifact for GitHub Pages
-        if: "${{ secrets.FIREBASE_SERVICE_ACCOUNT_BOT_IA_PC == '' }}"
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: dist
-
-      - name: Deploy to GitHub Pages
-        if: "${{ secrets.FIREBASE_SERVICE_ACCOUNT_BOT_IA_PC == '' }}"
-        uses: actions/deploy-pages@v4
+          channelId: live
