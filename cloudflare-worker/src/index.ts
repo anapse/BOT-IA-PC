@@ -17,32 +17,23 @@ export default {
       'Vary': 'Origin',
     };
 
-    if (ALLOWED_ORIGINS.has(origin)) {
-      corsHeaders['Access-Control-Allow-Origin'] = origin;
-    }
-
-    if (request.method === 'OPTIONS') {
-      return new Response(null, { status: 204, headers: corsHeaders });
-    }
+    if (ALLOWED_ORIGINS.has(origin)) corsHeaders['Access-Control-Allow-Origin'] = origin;
+    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders });
 
     const respond = (body: BodyInit | null, status = 200, extraHeaders: Record<string, string> = {}) =>
-      new Response(body, {
-        status,
-        headers: { ...corsHeaders, ...extraHeaders },
-      });
+      new Response(body, { status, headers: { ...corsHeaders, ...extraHeaders } });
+    const json = (body: unknown, status = 200) =>
+      respond(JSON.stringify(body), status, { 'Content-Type': 'application/json' });
 
     if (url.pathname === '/status' && request.method === 'GET') {
-      return respond(JSON.stringify({ status: 'ok', version: '1.0.0' }), 200, {
-        'Content-Type': 'application/json',
-      });
+      return json({ status: 'ok', version: '1.0.0' });
     }
 
-    if (url.pathname === '/sync' && request.method === 'POST') {
+    if ((url.pathname === '/sync' && request.method === 'POST') ||
+        (url.pathname === '/config' && request.method === 'GET')) {
       const authHeader = request.headers.get('Authorization');
       if (!authHeader?.startsWith('Bearer ')) {
-        return respond(JSON.stringify({ error: 'missing_bearer_token' }), 401, {
-          'Content-Type': 'application/json',
-        });
+        return json({ error: 'missing_bearer_token' }, 401);
       }
 
       const token = authHeader.slice('Bearer '.length).trim();
@@ -59,34 +50,33 @@ export default {
           email_unverified: 'El correo de la cuenta de Firebase no está verificado.',
           not_admin: 'La cuenta autenticada no está en la lista de administradores del Worker.',
         };
-        return respond(JSON.stringify({
+        return json({
           error: 'forbidden',
           reason: validation.reason,
           message: messages[validation.reason],
-        }), 403, { 'Content-Type': 'application/json' });
+        }, 403);
+      }
+
+      const storage = getStorage(env);
+
+      if (url.pathname === '/config' && request.method === 'GET') {
+        const config = await storage.getConfig();
+        return json({ status: 'ok', config });
       }
 
       let config;
       try {
         config = await request.json();
       } catch {
-        return respond(JSON.stringify({ error: 'Invalid JSON' }), 400, {
-          'Content-Type': 'application/json',
-        });
+        return json({ error: 'Invalid JSON' }, 400);
       }
 
       if (!config?.agents || !Array.isArray(config.agents)) {
-        return respond(JSON.stringify({ error: 'Invalid config: agents array required' }), 400, {
-          'Content-Type': 'application/json',
-        });
+        return json({ error: 'Invalid config: agents array required' }, 400);
       }
 
-      const storage = getStorage(env);
       await storage.saveConfig(config);
-
-      return respond(JSON.stringify({ status: 'synced' }), 200, {
-        'Content-Type': 'application/json',
-      });
+      return json({ status: 'synced' });
     }
 
     return respond('Not Found', 404);
