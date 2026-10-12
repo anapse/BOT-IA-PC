@@ -28,11 +28,19 @@ export const syncWorkerConfig = async (workerUrl: string, config: any) => {
 
   if (!response.ok) {
     const details = (await response.text()).trim();
+    let serverMessage = '';
+    try {
+      const parsed = JSON.parse(details);
+      serverMessage = typeof parsed.message === 'string' ? parsed.message : '';
+    } catch {
+      // Keep the raw response fallback below for non-JSON errors.
+    }
+
     if (response.status === 401) {
       throw new Error('HTTP 401: no se recibió un token válido de Firebase. Cierra sesión y vuelve a entrar.');
     }
     if (response.status === 403) {
-      throw new Error('HTTP 403: el Worker rechazó la cuenta. Comprueba que has iniciado sesión con el correo administrador verificado: elherreroanapse@gmail.com.');
+      throw new Error(`HTTP 403: ${serverMessage || 'el Worker rechazó la cuenta. Comprueba el correo administrador verificado.'}`);
     }
     throw new Error(`HTTP ${response.status}${details ? `: ${details.slice(0, 200)}` : ''}`);
   }
