@@ -3,7 +3,7 @@ import { Card } from '../components/Card';
 import { InputField } from '../components/InputField';
 import { ActionButton } from '../components/ActionButton';
 import { subscribeCollection, addData, updateData, deleteData } from '../services/firebase/db';
-import { BrainCircuit, Plus, Trash2, Cpu, CheckCircle2, Globe } from 'lucide-react';
+import { BrainCircuit, Plus, Trash2, Cpu, Globe, Pencil } from 'lucide-react';
 
 interface ModelConfig {
   id: string;
@@ -12,6 +12,7 @@ interface ModelConfig {
   modelId: string;
   connectionType: 'cloud' | 'local';
   endpoint?: string;
+  apiKey?: string;
   status: 'activo' | 'inactivo';
   createdAt: string;
 }
@@ -20,6 +21,7 @@ export const ModelsPage = () => {
   const [models, setModels] = useState<ModelConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingModelId, setEditingModelId] = useState<string | null>(null);
 
   // Form fields
   const [name, setName] = useState('');
@@ -27,6 +29,7 @@ export const ModelsPage = () => {
   const [modelId, setModelId] = useState('gemini-1.5-pro');
   const [connectionType, setConnectionType] = useState<'cloud' | 'local'>('cloud');
   const [endpoint, setEndpoint] = useState('');
+  const [apiKey, setApiKey] = useState('');
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -48,24 +51,60 @@ export const ModelsPage = () => {
     setSaving(true);
     setErrorMsg('');
     try {
-      await addData('modelConfigs', {
+      const modelData = {
         name: name.trim(),
         provider,
         modelId: modelId.trim(),
         connectionType,
         endpoint: endpoint.trim(),
-        status: 'activo',
-        createdAt: new Date().toISOString(),
-      });
+        ...(connectionType === 'cloud' && apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
+      };
+      if (editingModelId) {
+        await updateData('modelConfigs', editingModelId, modelData);
+      } else {
+        await addData('modelConfigs', {
+          ...modelData,
+          status: 'activo',
+          createdAt: new Date().toISOString(),
+        });
+      }
       setName('');
+      setProvider('Google Gemini');
       setModelId('gemini-1.5-pro');
+      setConnectionType('cloud');
       setEndpoint('');
+      setApiKey('');
+      setEditingModelId(null);
       setIsModalOpen(false);
     } catch (err: any) {
       setErrorMsg(err.message || 'Error al guardar el modelo');
     } finally {
       setSaving(false);
     }
+  };
+
+  const openEdit = (model: ModelConfig) => {
+    setEditingModelId(model.id);
+    setName(model.name || '');
+    setProvider(model.provider || 'Google Gemini');
+    setModelId(model.modelId || '');
+    setConnectionType(model.connectionType || 'cloud');
+    setEndpoint(model.endpoint || '');
+    setApiKey(model.apiKey || '');
+    setErrorMsg('');
+    setIsModalOpen(true);
+  };
+
+  const openCreate = () => {
+    setEditingModelId(null);
+    setName('');
+    setProvider('Google Gemini');
+    setModelId('gemini-1.5-pro');
+    setConnectionType('cloud');
+    setEndpoint('');
+    setApiKey('');
+    setErrorMsg('');
+    setIsModalOpen(true);
   };
 
   const handleDelete = async (id: string) => {
@@ -89,7 +128,7 @@ export const ModelsPage = () => {
           </h2>
           <p className="text-sm text-slate-400 mt-1">Configura motores LLM en la nube y modelos locales ejecutados en tu PC.</p>
         </div>
-        <ActionButton label="Añadir Modelo" onClick={() => setIsModalOpen(true)} icon={<Plus size={16} />} />
+        <ActionButton label="Añadir Modelo" onClick={openCreate} icon={<Plus size={16} />} />
       </div>
 
       {loading ? (
@@ -102,7 +141,7 @@ export const ModelsPage = () => {
             <p className="text-sm text-slate-500 max-w-sm mx-auto">
               Registra modelos como Gemini 1.5, OpenAI GPT-4o, Claude o servidores Ollama locales para asignarlos a tus agentes.
             </p>
-            <ActionButton label="Configurar primer modelo" onClick={() => setIsModalOpen(true)} />
+            <ActionButton label="Configurar primer modelo" onClick={openCreate} />
           </div>
         </Card>
       ) : (
@@ -149,7 +188,13 @@ export const ModelsPage = () => {
 
               <div className="flex items-center justify-between pt-3 border-t border-slate-800/60 mt-4">
                 <button
-                  onClick={() => toggleStatus(m)}
+                  onClick={() => openEdit(m)}
+                  className="text-xs text-cyan-400 hover:text-cyan-300 transition-colors flex items-center gap-1"
+                >
+                  <Pencil size={13} /> Editar
+                </button>
+                <button
+                  onClick={() => toggleStatus(m)
                   className="text-xs text-slate-400 hover:text-purple-400 transition-colors"
                 >
                   {m.status === 'activo' ? 'Deshabilitar' : 'Habilitar'}
@@ -172,8 +217,8 @@ export const ModelsPage = () => {
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-md overflow-hidden shadow-2xl">
             <div className="p-5 border-b border-slate-800 flex justify-between items-center">
-              <h3 className="font-semibold text-slate-100 text-lg">Registrar Modelo de IA</h3>
-              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-200">✕</button>
+              <h3 className="font-semibold text-slate-100 text-lg">{editingModelId ? 'Editar Modelo de IA' : 'Registrar Modelo de IA'}</h3>
+              <button onClick={() => { setIsModalOpen(false); setEditingModelId(null); }} className="text-slate-400 hover:text-slate-200">✕</button>
             </div>
 
             <form onSubmit={handleCreate} className="p-5 space-y-4">
@@ -227,6 +272,16 @@ export const ModelsPage = () => {
                 placeholder="gemini-1.5-pro, gpt-4o, llama3:8b..."
               />
 
+              {connectionType === 'cloud' && (
+                <InputField
+                  label="API Key"
+                  value={apiKey}
+                  onChange={setApiKey}
+                  isSecret
+                  placeholder={editingModelId && apiKey ? 'Clave guardada (déjala igual o reemplázala)' : 'Pega aquí la API Key del proveedor'}
+                />
+              )}
+
               {connectionType === 'local' && (
                 <InputField
                   label="Endpoint Local / URL"
@@ -239,12 +294,12 @@ export const ModelsPage = () => {
               <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
                 <button
                   type="button"
-                  onClick={() => setIsModalOpen(false)}
+                  onClick={() => { setIsModalOpen(false); setEditingModelId(null); }}
                   className="px-4 py-2 text-sm text-slate-400 hover:text-slate-200 rounded-lg"
                 >
                   Cancelar
                 </button>
-                <ActionButton label={saving ? 'Guardando...' : 'Registrar Modelo'} onClick={() => {}} />
+                <ActionButton label={saving ? 'Guardando...' : editingModelId ? 'Guardar cambios' : 'Registrar Modelo'} onClick={() => {}} />
               </div>
             </form>
           </div>
