@@ -4,10 +4,12 @@ import { InputField } from '../components/InputField';
 import { ActionButton } from '../components/ActionButton';
 import { checkWorkerStatus, syncWorkerConfig } from '../services/worker/client';
 import { getDocData, setDocData, getCollectionData } from '../services/firebase/db';
-import { Cpu, CheckCircle2, XCircle, RefreshCw, UploadCloud, ShieldAlert } from 'lucide-react';
+import { Cpu, CheckCircle2, XCircle, RefreshCw, UploadCloud } from 'lucide-react';
+
+const DEFAULT_WORKER_URL = 'https://bot-ia-pc.elherreroanapse.workers.dev';
 
 export const WorkerPage = () => {
-  const [url, setUrl] = useState('');
+  const [url, setUrl] = useState(DEFAULT_WORKER_URL);
   const [status, setStatus] = useState<string | null>(null);
   const [statusType, setStatusType] = useState<'success' | 'error' | 'info' | null>(null);
   const [loading, setLoading] = useState(false);
@@ -109,7 +111,7 @@ export const WorkerPage = () => {
             label="URL Base del Worker"
             value={url}
             onChange={setUrl}
-            placeholder="https://bot-ia-pc-worker.tu-subdominio.workers.dev"
+            placeholder="https://bot-ia-pc.elherreroanapse.workers.dev"
           />
 
           <div className="flex flex-wrap gap-2 pt-2">
