@@ -65,7 +65,7 @@ export default {
       return json({ status: 'ok', version: '1.0.0' });
     }
 
-    const telegramMatch = url.pathname.match(/^\\/webhook\\/telegram\\/([^/]+)$/);
+    const telegramMatch = url.pathname.match(/^\/webhook\/telegram\/([^/]+)$/);
     if (telegramMatch && request.method === 'POST') {
       let update: any;
       try { update = await request.json(); } catch { return json({ error: 'Invalid update' }, 400); }
@@ -89,7 +89,7 @@ export default {
         return json({ status: 'model_unavailable' });
       }
       const configuredModelId = String(model.modelId || agent.model || '').trim();
-      const modelId = configuredModelId.replace(/^models\\//i, '');
+      const modelId = configuredModelId.replace(/^models\//i, '');
       if (!/^gemini-[a-zA-Z0-9._-]+$/i.test(modelId)) {
         await send(`ID de modelo Gemini no válido: ${configuredModelId}`);
         return json({ status: 'invalid_model' });
@@ -182,7 +182,7 @@ export default {
         // Google puede mostrar el identificador como "gemini-..." o como recurso "models/gemini-...".
         // Normalizamos espacios y el prefijo para enviar solo el ID que espera generateContent.
         const configuredModelId = String(model.modelId || agent.model || '').trim();
-        const modelId = configuredModelId.replace(/^models\\//i, '');
+      const modelId = configuredModelId.replace(/^models\//i, '');
         if (!/^gemini-[a-zA-Z0-9._-]+$/i.test(modelId)) {
           return json({
             error: `El ID de modelo Gemini no es válido: "${configuredModelId}". Usa el ID técnico, por ejemplo gemini-3.5-flash-lite, sin URL ni texto adicional.`,
