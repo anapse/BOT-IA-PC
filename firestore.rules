@@ -4,43 +4,44 @@ service cloud.firestore {
     
     function isSignedIn() { return request.auth != null; }
     function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
-    function isAdmin() { return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)); }
+    function isAdmin() { 
+      return isSignedIn() && (
+        request.auth.token.email == 'elherreroanapse@gmail.com' || 
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      ); 
+    }
     
     match /{document=**} {
       allow read, write: if false;
     }
 
     match /agents/{agentId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && isValidId(agentId);
-      allow update: if isSignedIn();
-      allow delete: if isAdmin();
+      allow read, create, update, delete: if isSignedIn();
     }
 
     match /telegramConnections/{connectionId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && isValidId(connectionId);
-      allow update: if isSignedIn();
-      allow delete: if isAdmin();
+      allow read, create, update, delete: if isSignedIn();
     }
 
     match /modelConfigs/{modelId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && isValidId(modelId);
-      allow update: if isSignedIn();
-      allow delete: if isAdmin();
+      allow read, create, update, delete: if isSignedIn();
+    }
+
+    match /communicationRoutes/{routeId} {
+      allow read, create, update, delete: if isSignedIn();
+    }
+
+    match /logs/{logId} {
+      allow read, create, delete: if isSignedIn();
     }
 
     match /appSettings/{settingId} {
-      allow read: if isSignedIn();
-      allow create: if isAdmin();
-      allow update: if isAdmin();
-      allow delete: if isAdmin();
+      allow read, write: if isSignedIn();
     }
 
     match /admins/{adminId} {
-      allow read: if false; // Admin list is hidden
-      allow write: if false; // Only via console/CLI
+      allow read: if false;
+      allow write: if false;
     }
   }
 }

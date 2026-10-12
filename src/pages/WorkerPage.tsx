@@ -2,57 +2,163 @@ import { useState, useEffect } from 'react';
 import { Card } from '../components/Card';
 import { InputField } from '../components/InputField';
 import { ActionButton } from '../components/ActionButton';
-import { checkWorkerStatus } from '../services/worker/client';
-import { getCollectionData, updateData, addData } from '../services/firebase/db';
+import { checkWorkerStatus, syncWorkerConfig } from '../services/worker/client';
+import { getDocData, setDocData, getCollectionData } from '../services/firebase/db';
+import { Cpu, CheckCircle2, XCircle, RefreshCw, UploadCloud, ShieldAlert } from 'lucide-react';
 
 export const WorkerPage = () => {
   const [url, setUrl] = useState('');
   const [status, setStatus] = useState<string | null>(null);
+  const [statusType, setStatusType] = useState<'success' | 'error' | 'info' | null>(null);
   const [loading, setLoading] = useState(false);
-  const [configId, setConfigId] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [savedFeedback, setSavedFeedback] = useState(false);
 
   useEffect(() => {
-    getCollectionData('appSettings').then(data => {
-      const workerConfig = data?.find(item => item.key === 'workerUrl');
-      if (workerConfig) {
-        setUrl(workerConfig.value);
-        setConfigId(workerConfig.id);
+    getDocData('appSettings', 'workerConfig').then(data => {
+      if (data && data.value) {
+        setUrl(data.value);
       }
     });
   }, []);
 
   const handleSave = async () => {
-    if (configId) {
-      await updateData('appSettings', configId, { key: 'workerUrl', value: url });
-    } else {
-      await addData('appSettings', { key: 'workerUrl', value: url });
+    if (!url.trim()) return;
+    try {
+      await setDocData('appSettings', 'workerConfig', {
+        key: 'workerUrl',
+        value: url.trim(),
+        updatedAt: new Date().toISOString(),
+      });
+      setSavedFeedback(true);
+      setTimeout(() => setSavedFeedback(false), 3000);
+    } catch (err: any) {
+      setStatus(`Error al guardar en Firestore: ${err.message}`);
+      setStatusType('error');
     }
-    alert('URL guardada');
   };
 
   const handleTestConnection = async () => {
+    if (!url.trim()) {
+      setStatus('Introduce una URL antes de probar.');
+      setStatusType('error');
+      return;
+    }
+
     setLoading(true);
     setStatus(null);
     try {
-      await checkWorkerStatus(url);
-      setStatus('Conectado correctamente');
-    } catch (e) {
-      setStatus('Error al conectar');
+      const res = await checkWorkerStatus(url.trim());
+      setStatus(`Conexión exitosa. Versión del Worker: ${res.version || '1.0.0'}`);
+      setStatusType('success');
+    } catch (e: any) {
+      setStatus(`Error al conectar con ${url}: ${e.message || 'Worker inalcanzable'}`);
+      setStatusType('error');
     } finally {
       setLoading(false);
     }
   };
 
+  const handleSyncAgents = async () => {
+    if (!url.trim()) {
+      setStatus('Debes configurar y guardar la URL del Worker primero.');
+      setStatusType('error');
+      return;
+    }
+
+    setSyncing(true);
+    setStatus(null);
+    try {
+      const agents = await getCollectionData('agents');
+      const models = await getCollectionData('modelConfigs');
+      const connections = await getCollectionData('telegramConnections');
+
+      const payload = {
+        agents: agents || [],
+        models: models || [],
+        connections: connections || [],
+        syncedAt: new Date().toISOString(),
+      };
+
+      await syncWorkerConfig(url.trim(), payload);
+      setStatus('¡Configuración y agentes sincronizados exitosamente con Cloudflare KV!');
+      setStatusType('success');
+    } catch (err: any) {
+      setStatus(`Fallo en la sincronización: ${err.message}`);
+      setStatusType('error');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <Card title="Configuración del Worker">
+      <div>
+        <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2">
+          <Cpu className="text-amber-400" size={24} />
+          Configuración e Integración de Cloudflare Worker
+        </h2>
+        <p className="text-sm text-slate-400 mt-1">
+          Vincula tu Worker perimetral independiente con la base de datos Firestore y sincroniza configuraciones con KV.
+        </p>
+      </div>
+
+      <Card title="Punto de Enlace del Worker">
         <div className="space-y-4">
-          <InputField label="URL del Worker" value={url} onChange={setUrl} />
-          <div className="flex gap-2">
+          <InputField
+            label="URL Base del Worker"
+            value={url}
+            onChange={setUrl}
+            placeholder="https://bot-ia-pc-worker.tu-subdominio.workers.dev"
+          />
+
+          <div className="flex flex-wrap gap-2 pt-2">
             <ActionButton label="Guardar URL" onClick={handleSave} />
-            <ActionButton label={loading ? "Probando..." : "Probar Conexión"} onClick={handleTestConnection} variant="secondary" />
+            <ActionButton
+              label={loading ? "Probando..." : "Probar /status"}
+              onClick={handleTestConnection}
+              variant="secondary"
+              icon={<RefreshCw size={14} className={loading ? 'animate-spin' : ''} />}
+            />
+            <ActionButton
+              label={syncing ? "Sincronizando..." : "Sincronizar con Worker KV"}
+              onClick={handleSyncAgents}
+              variant="secondary"
+              icon={<UploadCloud size={14} className={syncing ? 'animate-spin' : ''} />}
+            />
           </div>
-          {status && <p className={`text-sm ${status === 'Conectado correctamente' ? 'text-cyan-500' : 'text-red-500'}`}>{status}</p>}
+
+          {savedFeedback && (
+            <div className="p-3 bg-emerald-950/40 border border-emerald-800/60 text-emerald-300 text-xs rounded-lg flex items-center gap-2">
+              <CheckCircle2 size={16} />
+              URL guardada de forma persistente en Cloud Firestore.
+            </div>
+          )}
+
+          {status && (
+            <div className={`p-3 rounded-lg border text-xs flex items-center gap-2 ${
+              statusType === 'success'
+                ? 'bg-emerald-950/40 border-emerald-800/60 text-emerald-300'
+                : 'bg-red-950/40 border-red-800/60 text-red-300'
+            }`}>
+              {statusType === 'success' ? <CheckCircle2 size={16} /> : <XCircle size={16} />}
+              <span>{status}</span>
+            </div>
+          )}
+        </div>
+      </Card>
+
+      <Card title="Detalles de la Arquitectura del Worker">
+        <div className="space-y-3 text-xs text-slate-400 leading-relaxed">
+          <p>
+            • <strong>Independencia:</strong> El código del Worker reside en la carpeta <code className="text-amber-400 bg-slate-900 px-1.5 py-0.5 rounded">cloudflare-worker/</code>. No se compila con la web ni se despliega automáticamente, asegurando total soberanía de despliegue.
+          </p>
+          <p>
+            • <strong>Seguridad JWT:</strong> Cada petición a <code className="text-cyan-400 bg-slate-900 px-1.5 py-0.5 rounded">POST /sync</code> valida la firma y vigencia del Firebase ID Token emitido para tu usuario actual, verificando autorización administrativa en el backend.
+          </p>
+          <p>
+            • <strong>Persistencia perimetral:</strong> Al sincronizar, las configuraciones se guardan en Cloudflare KV (<code className="text-purple-400 bg-slate-900 px-1.5 py-0.5 rounded">WORKER_KV</code>) para tiempos de respuesta ultra-bajos sin sobrecargar Firestore.
+          </p>
         </div>
       </Card>
     </div>

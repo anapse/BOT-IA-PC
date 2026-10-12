@@ -47,6 +47,46 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "name", "createdAt"]
+    },
+    "CommunicationRoute": {
+      "title": "CommunicationRoute",
+      "description": "Inter-agent communication routing rule",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "sourceAgent": { "type": "string" },
+        "targetAgent": { "type": "string" },
+        "channel": { "type": "string" },
+        "priority": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "sourceAgent", "targetAgent", "createdAt"]
+    },
+    "LogEntry": {
+      "title": "LogEntry",
+      "description": "System or technical log entry",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "level": { "type": "string" },
+        "source": { "type": "string" },
+        "message": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "level", "message", "createdAt"]
+    },
+    "AppSetting": {
+      "title": "AppSetting",
+      "description": "Global application setting or configuration",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "key": { "type": "string" },
+        "value": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id"]
     }
   },
   "firestore": {
@@ -61,6 +101,18 @@
     "/modelConfigs/{modelId}": {
       "schema": "ModelConfig",
       "description": "Collection of AI model configurations"
+    },
+    "/communicationRoutes/{routeId}": {
+      "schema": "CommunicationRoute",
+      "description": "Collection of agent communication routes"
+    },
+    "/logs/{logId}": {
+      "schema": "LogEntry",
+      "description": "Collection of technical logs"
+    },
+    "/appSettings/{settingId}": {
+      "schema": "AppSetting",
+      "description": "Collection of application settings"
     }
   }
 }

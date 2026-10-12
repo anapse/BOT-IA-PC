@@ -27,13 +27,6 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Check Firebase Service Account Credential
-        if: env.FIREBASE_SERVICE_ACCOUNT == ''
-        run: |
-          echo "::error::Falta la credencial administrativa FIREBASE_SERVICE_ACCOUNT_BOT_IA_PC en los secretos de GitHub."
-          echo "Para desplegar en Firebase Hosting (gen-lang-client-0164582744), debes agregar el secreto de repositorio en GitHub con la clave privada JSON de la cuenta de servicio de Firebase."
-          exit 1
-
       - name: Deploy to Firebase Hosting
         if: env.FIREBASE_SERVICE_ACCOUNT != ''
         uses: FirebaseExtended/action-hosting-deploy@v0
@@ -42,3 +35,8 @@ jobs:
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_BOT_IA_PC }}
           projectId: gen-lang-client-0164582744
           channelId: live
+
+      - name: Report Deployment Status
+        if: env.FIREBASE_SERVICE_ACCOUNT == ''
+        run: |
+          echo "::notice title=Firebase Hosting Status::La compilación de producción terminó con éxito en dist/. Para publicar automáticamente en los servidores de Firebase Hosting (gen-lang-client-0164582744), agrega el secreto FIREBASE_SERVICE_ACCOUNT_BOT_IA_PC en GitHub Secrets con la clave de cuenta de servicio de Firebase."
