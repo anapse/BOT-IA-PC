@@ -61,6 +61,27 @@ export default {
     const json = (body: unknown, status = 200) =>
       respond(JSON.stringify(body), status, { 'Content-Type': 'application/json' });
 
+    if (url.pathname === '/models/catalog' && request.method === 'POST') {
+      let input: any;
+      try { input = await request.json(); } catch { return json({ error: 'El cuerpo debe ser JSON válido.' }, 400); }
+      const provider = String(input?.provider || '').toLowerCase();
+      const apiKey = typeof input?.apiKey === 'string' ? input.apiKey.trim() : '';
+      if (!apiKey) return json({ error: 'Introduce primero la API Key.' }, 400);
+      let endpoint = '';
+      let headers: Record<string, string> = { Authorization: 'Bearer ' + apiKey };
+      if (provider.includes('openrouter')) endpoint = 'https://openrouter.ai/api/v1/models';
+      else if (provider.includes('nvidia')) endpoint = 'https://integrate.api.nvidia.com/v1/models';
+      else if (provider.includes('gemini') || provider.includes('google')) { endpoint = 'https://generativelanguage.googleapis.com/v1beta/models?key=' + encodeURIComponent(apiKey); headers = {}; }
+      else return json({ error: 'Catálogo automático disponible para OpenRouter, NVIDIA NIM y Google Gemini.' }, 400);
+      try {
+        const upstream = await fetch(endpoint, { headers });
+        const payload: any = await upstream.json().catch(() => ({}));
+        if (!upstream.ok) { const detail = typeof payload?.error?.message === 'string' ? payload.error.message : (typeof payload?.message === 'string' ? payload.message : 'El proveedor rechazó la clave.'); return json({ error: 'Catálogo (HTTP ' + upstream.status + '): ' + detail.slice(0, 250) }, upstream.status === 401 || upstream.status === 403 ? 400 : 502); }
+        const source = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload?.models) ? payload.models : [];
+        const models = source.map((item: any) => { const id = String(item?.id || item?.name || '').replace(/^models\//, ''); const name = String(item?.name || item?.displayName || id).replace(/^models\//, ''); return id ? { id, name, contextLength: item?.context_length || item?.inputTokenLimit || null } : null; }).filter(Boolean).sort((a: any, b: any) => a.name.localeCompare(b.name));
+        return json({ models, count: models.length });
+      } catch { return json({ error: 'No se pudo consultar el catálogo del proveedor.' }, 502); }
+    }
     if (url.pathname === '/status' && request.method === 'GET') {
       return json({ status: 'ok', version: '1.0.0' });
     }
