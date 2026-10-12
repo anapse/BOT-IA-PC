@@ -3,7 +3,7 @@ import { Card } from '../components/Card';
 import { InputField } from '../components/InputField';
 import { ActionButton } from '../components/ActionButton';
 import { checkWorkerStatus, syncWorkerConfig, readWorkerConfig } from '../services/worker/client';
-import { getDocData, setDocData, getCollectionData } from '../services/firebase/db';
+import { getDocData, setDocData, getCollectionDataStrict } from '../services/firebase/db';
 import { Cpu, CheckCircle2, XCircle, RefreshCw, UploadCloud, DownloadCloud } from 'lucide-react';
 
 const DEFAULT_WORKER_URL = 'https://bot-ia-pc.elherreroanapse.workers.dev';
@@ -68,9 +68,9 @@ export const WorkerPage = () => {
     setSyncing(true);
     setStatus(null);
     try {
-      const agents = await getCollectionData('agents');
-      const models = await getCollectionData('modelConfigs');
-      const connections = await getCollectionData('telegramConnections');
+      const agents = await getCollectionDataStrict('agents');
+      const models = await getCollectionDataStrict('modelConfigs');
+      const connections = await getCollectionDataStrict('telegramConnections');
       const payload = {
         agents: agents || [],
         models: models || [],
@@ -78,7 +78,7 @@ export const WorkerPage = () => {
         syncedAt: new Date().toISOString(),
       };
       await syncWorkerConfig(url.trim(), payload);
-      setStatus('¡Configuración y agentes sincronizados exitosamente con Cloudflare KV!');
+      setStatus(`Sincronización correcta. Enviados a KV: ${payload.agents.length} agentes, ${payload.models.length} modelos y ${payload.connections.length} conexiones.`);
       setStatusType('success');
     } catch (err: any) {
       setStatus(`Fallo en la sincronización: ${err.message}`);
