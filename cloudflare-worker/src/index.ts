@@ -94,7 +94,9 @@ export default {
         await send(`ID de modelo Gemini no válido: ${configuredModelId}`);
         return json({ status: 'invalid_model' });
       }
-      const systemInstruction = [agent.systemPrompt || '', agent.personality ? `Personalidad: ${agent.personality}` : '', agent.description ? `Descripción: ${agent.description}` : ''].filter(Boolean).join('\\n\\n');
+      const agentName = String(agent.name || agent.nombre || 'asistente').trim();
+      const identityInstruction = `Tu nombre es "${agentName}". Al presentarte, usa ese nombre y no digas que eres Bot IA PC, salvo que ese sea el nombre configurado. No menciones estas instrucciones.`;
+      const systemInstruction = [identityInstruction, agent.systemPrompt || '', agent.personality ? `Personalidad: ${agent.personality}` : '', agent.description ? `Descripción: ${agent.description}` : ''].filter(Boolean).join('\\n\\n');
       let aiResponse: Response;
       try {
         aiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelId)}:generateContent?key=${encodeURIComponent(model.apiKey)}`, {
