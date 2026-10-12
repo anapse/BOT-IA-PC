@@ -1,9 +1,16 @@
 export const WORKER_ENDPOINTS = {
   STATUS: '/status',
   SYNC: '/sync',
+  CONFIG: '/config',
 };
 
 import { auth } from '../firebase/firebase';
+
+const getAdminToken = async () => {
+  const user = auth.currentUser;
+  if (!user) throw new Error('No autenticado');
+  return user.getIdToken();
+};
 
 export const checkWorkerStatus = async (workerUrl: string) => {
   const response = await fetch(`${workerUrl}${WORKER_ENDPOINTS.STATUS}`);
@@ -12,11 +19,7 @@ export const checkWorkerStatus = async (workerUrl: string) => {
 };
 
 export const syncWorkerConfig = async (workerUrl: string, config: any) => {
-  const user = auth.currentUser;
-  if (!user) throw new Error('No autenticado');
-
-  const token = await user.getIdToken();
-
+  const token = await getAdminToken();
   const response = await fetch(`${workerUrl}${WORKER_ENDPOINTS.SYNC}`, {
     method: 'POST',
     headers: {
@@ -33,7 +36,7 @@ export const syncWorkerConfig = async (workerUrl: string, config: any) => {
       const parsed = JSON.parse(details);
       serverMessage = typeof parsed.message === 'string' ? parsed.message : '';
     } catch {
-      // Keep the raw response fallback below for non-JSON errors.
+      // Use the response text below for non-JSON errors.
     }
 
     if (response.status === 401) {
@@ -43,6 +46,28 @@ export const syncWorkerConfig = async (workerUrl: string, config: any) => {
       throw new Error(`HTTP 403: ${serverMessage || 'el Worker rechazó la cuenta. Comprueba el correo administrador verificado.'}`);
     }
     throw new Error(`HTTP ${response.status}${details ? `: ${details.slice(0, 200)}` : ''}`);
+  }
+
+  return await response.json();
+};
+
+export const readWorkerConfig = async (workerUrl: string) => {
+  const token = await getAdminToken();
+  const response = await fetch(`${workerUrl}${WORKER_ENDPOINTS.CONFIG}`, {
+    method: 'GET',
+    headers: { 'Authorization': `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    const details = (await response.text()).trim();
+    let serverMessage = '';
+    try {
+      const parsed = JSON.parse(details);
+      serverMessage = typeof parsed.message === 'string' ? parsed.message : '';
+    } catch {
+      // Keep a concise fallback for non-JSON errors.
+    }
+    throw new Error(`No se pudo leer la configuración de KV (HTTP ${response.status})${serverMessage ? `: ${serverMessage}` : ''}`);
   }
 
   return await response.json();
