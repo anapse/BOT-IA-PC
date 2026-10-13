@@ -152,6 +152,20 @@ export const ChatPage = () => {
     setActiveConversationId(''); setTargetMode('agent'); setSelectedAgentId(agentId); setSelectedModelId(models[0]?.id || '__temporary__'); setMessage(''); setPendingAttachments([]); setError('');
     setTimeout(() => textareaRef.current?.focus(), 0);
   };
+  const updateConversationTarget = (conversationId: string, mode: 'agent' | 'model', targetId: string, providerId?: string) => {
+    setConversations(current => current.map(item => {
+      if (item.id !== conversationId) return item;
+      return {
+        ...item,
+        targetMode: mode,
+        targetId,
+        agentId: mode === 'agent' ? targetId : '',
+        targetProviderId: mode === 'model' ? (providerId || selectedProviderId) : undefined,
+        temporaryModel: undefined,
+        updatedAt: new Date().toISOString(),
+      };
+    }));
+  };
   const handleFileSelection = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || []);
     event.target.value = '';
@@ -226,16 +240,24 @@ ${agents.map(agent => `• $${aliasFor(agent)} — ${agent.name}`).join('\\n')}`
         if (!found) { setError('No encontré ese agente. Usa $agente list para ver los disponibles.'); return; }
         mode = 'agent'; targetId = found.id;
         outgoingText = words.slice(consumed).join(' ').trim();
-        setTargetMode('agent'); setSelectedAgentId(found.id); setActiveConversationId('');
-        if (!outgoingText) { setTargetSearch(''); setMessage(''); return; }
+        setTargetMode('agent'); setSelectedAgentId(found.id);
+        if (!outgoingText) {
+          setTargetSearch(''); setMessage('');
+          if (activeConversation) updateConversationTarget(activeConversation.id, 'agent', found.id);
+          return;
+        }
       } else if (directCommand) {
         const command = normalizeCommand(directCommand[1]);
         const found = agents.find(agent => aliasFor(agent) === command || normalizeCommand(agent.id) === command);
         if (found) {
           mode = 'agent'; targetId = found.id;
           outgoingText = (directCommand[2] || '').trim();
-          setTargetMode('agent'); setSelectedAgentId(found.id); setActiveConversationId('');
-          if (!outgoingText) { setMessage(''); return; }
+          setTargetMode('agent'); setSelectedAgentId(found.id);
+          if (!outgoingText) {
+            setMessage('');
+            if (activeConversation) updateConversationTarget(activeConversation.id, 'agent', found.id);
+            return;
+          }
         }
       }
     }
@@ -249,10 +271,14 @@ ${agents.map(agent => `• $${aliasFor(agent)} — ${agent.name}`).join('\\n')}`
       attachments: outgoingAttachments.map(item => ({ ...item, size: Math.floor(item.data.length * 3 / 4) })),
     };
     let conversation = activeConversation;
-    if (!conversation || mode !== (conversation.targetMode || 'agent') || targetId !== (conversation.targetId || conversation.agentId)) {
+    if (!conversation) {
       conversation = { id: makeId(), title: rawText.length > 42 ? `${rawText.slice(0, 42).trim()}…` : rawText, agentId: mode === 'agent' ? targetId : '', targetMode: mode, targetId, ...(mode === 'model' ? { targetProviderId: providerIdForRequest } : {}), messages: [], updatedAt: now };
       setActiveConversationId(conversation.id);
       setConversations(current => [conversation!, ...current]);
+    } else if (mode !== (conversation.targetMode || 'agent') || targetId !== (conversation.targetId || conversation.agentId) || (mode === 'model' && providerIdForRequest !== conversation.targetProviderId)) {
+      // Changing destination keeps the same chat and its history; only the target changes.
+      conversation = { ...conversation, agentId: mode === 'agent' ? targetId : '', targetMode: mode, targetId, targetProviderId: mode === 'model' ? providerIdForRequest : undefined, temporaryModel: undefined, updatedAt: now };
+      setConversations(current => current.map(item => item.id === conversation!.id ? conversation! : item));
     }
     const conversationId = conversation.id;
     const previousMessages = conversation.messages;
@@ -322,18 +348,37 @@ ${agents.map(agent => `• $${aliasFor(agent)} — ${agent.name}`).join('\\n')}`
       <header className="flex min-h-[62px] items-center justify-between gap-3 border-b border-slate-800 px-3 sm:px-5">
         <div className="flex min-w-0 items-center gap-2"><button onClick={() => setSidebarOpen(value => !value)} title={sidebarOpen ? 'Ocultar conversaciones' : 'Mostrar conversaciones'} className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white">{sidebarOpen ? <PanelLeftClose size={18}/> : <PanelLeftOpen size={18}/>}</button><div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-cyan-950 text-cyan-300"><Bot size={17}/></div><div className="min-w-0"><p className="truncate text-sm font-semibold">{activeConversation ? activeConversation.title : 'Nuevo chat'}</p><p className="text-[11px] text-slate-500">Conversaciones separadas por agente o modelo</p></div></div>
         <div className="flex max-w-[62%] items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-900 p-1.5 sm:gap-2 sm:px-3 sm:py-2">
-          <select aria-label="Tipo de destino" value={activeConversation ? (activeConversation.targetMode || 'agent') : targetMode} onChange={event => { const next = event.target.value as 'agent' | 'model'; setTargetMode(next); setActiveConversationId(''); setError(''); }} className="max-w-[86px] bg-transparent text-xs text-cyan-300 outline-none sm:max-w-none sm:text-sm"><option value="agent" className="bg-slate-900">Agente</option><option value="model" className="bg-slate-900">Modelo</option></select>
+          <select aria-label="Tipo de destino" value={activeConversation ? (activeConversation.targetMode || 'agent') : targetMode} onChange={event => {
+            const next = event.target.value as 'agent' | 'model';
+            setTargetMode(next); setError('');
+            if (activeConversation) {
+              const nextId = next === 'agent' ? selectedAgentId : selectedModelId;
+              updateConversationTarget(activeConversation.id, next, nextId, selectedProviderId);
+            }
+          }} className="max-w-[86px] bg-transparent text-xs text-cyan-300 outline-none sm:max-w-none sm:text-sm"><option value="agent" className="bg-slate-900">Agente</option><option value="model" className="bg-slate-900">Modelo</option></select>
           {targetMode === 'agent' ? <>
             <input aria-label="Buscar agente" value={targetSearch} onChange={event => setTargetSearch(event.target.value)} placeholder="Buscar agente…" className="hidden w-24 min-w-0 bg-transparent text-xs text-slate-200 outline-none placeholder:text-slate-600 sm:block"/>
-            <select aria-label="Seleccionar agente" value={activeConversation && activeConversation.targetMode !== 'model' ? (activeConversation.targetId || activeConversation.agentId) : selectedAgentId} onChange={event => { setSelectedAgentId(event.target.value); setActiveConversationId(''); setError(''); }} disabled={loadingAgents || agents.length === 0} className="min-w-0 max-w-[140px] bg-transparent text-xs text-slate-100 outline-none sm:max-w-[190px] sm:text-sm">
+            <select aria-label="Seleccionar agente" value={activeConversation && activeConversation.targetMode !== 'model' ? (activeConversation.targetId || activeConversation.agentId) : selectedAgentId} onChange={event => {
+              const id = event.target.value;
+              setSelectedAgentId(id); setError('');
+              if (activeConversation) updateConversationTarget(activeConversation.id, 'agent', id);
+            }} disabled={loadingAgents || agents.length === 0} className="min-w-0 max-w-[140px] bg-transparent text-xs text-slate-100 outline-none sm:max-w-[190px] sm:text-sm">
               {loadingAgents ? <option value="">Cargando…</option> : filteredAgents.length ? filteredAgents.map(agent => <option key={agent.id} value={agent.id} className="bg-slate-900">{agent.name}</option>) : <option value="">Sin agentes</option>}
             </select>
           </> : <>
-            <select aria-label="Proveedor" value={effectiveProviderId} onChange={event => { const id = event.target.value; setSelectedProviderId(id); setSelectedModelId(''); setCatalogModels([]); setActiveConversationId(''); setError(''); }} className="min-w-0 max-w-[120px] bg-transparent text-xs text-slate-100 outline-none sm:max-w-[160px] sm:text-sm">
+            <select aria-label="Proveedor" value={effectiveProviderId} onChange={event => {
+              const id = event.target.value;
+              setSelectedProviderId(id); setSelectedModelId(''); setCatalogModels([]); setError('');
+              if (activeConversation) updateConversationTarget(activeConversation.id, 'model', '', id);
+            }} className="min-w-0 max-w-[120px] bg-transparent text-xs text-slate-100 outline-none sm:max-w-[160px] sm:text-sm">
               <option value="">Proveedor…</option>{providers.map(provider => <option key={provider.id} value={provider.id} className="bg-slate-900">{provider.name}</option>)}
             </select>
             <input aria-label="Buscar modelo" value={targetSearch} onChange={event => setTargetSearch(event.target.value)} placeholder={catalogLoading ? 'Cargando…' : 'Buscar modelo…'} className="hidden w-24 min-w-0 bg-transparent text-xs text-slate-200 outline-none placeholder:text-slate-600 sm:block"/>
-            <select aria-label="Modelo" value={activeConversation?.targetMode === 'model' ? (activeConversation.targetId || '') : selectedModelId} onChange={event => { setSelectedModelId(event.target.value); setActiveConversationId(''); setError(''); }} disabled={!effectiveProviderId || catalogLoading || catalogModels.length === 0} className="min-w-0 max-w-[120px] bg-transparent text-xs text-slate-100 outline-none sm:max-w-[190px] sm:text-sm">
+            <select aria-label="Modelo" value={activeConversation?.targetMode === 'model' ? (activeConversation.targetId || '') : selectedModelId} onChange={event => {
+              const id = event.target.value;
+              setSelectedModelId(id); setError('');
+              if (activeConversation) updateConversationTarget(activeConversation.id, 'model', id, effectiveProviderId);
+            }} disabled={!effectiveProviderId || catalogLoading || catalogModels.length === 0} className="min-w-0 max-w-[120px] bg-transparent text-xs text-slate-100 outline-none sm:max-w-[190px] sm:text-sm">
               {catalogLoading ? <option value="">Cargando…</option> : filteredModels.map(model => <option key={model.id} value={model.id} className="bg-slate-900">{model.name}</option>)}
               {!catalogLoading && !catalogModels.length && <option value="">Sin modelos</option>}
             </select>
