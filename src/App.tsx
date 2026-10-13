@@ -8,7 +8,7 @@ import { Layout } from './components/Layout';
 import { Dashboard } from './pages/Dashboard';
 import { AgentsPage } from './pages/Agents';
 import { TelegramPage } from './pages/Telegram';
-import { ModelsPage } from './pages/Models';
+import { ProvidersPage } from './pages/Providers';
 import { FirebasePage } from './pages/FirebasePage';
 import { CommunicationPage } from './pages/Communication';
 import { ChatPage } from './pages/Chat';
