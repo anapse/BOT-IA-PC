@@ -324,20 +324,30 @@ export default {
       const identityInstruction = `Tu nombre es "${agentName}". Al presentarte, usa ese nombre y no digas que eres Bot IA PC, salvo que ese sea el nombre configurado. No menciones estas instrucciones. Regla importante: no empieces cada respuesta con una presentación, saludo repetido, biografía ni frases como "Soy Nemotron". Preséntate solo si el usuario pregunta quién eres o inicia claramente una conversación nueva. En los demás mensajes, responde directamente a lo que te pidieron y evita repetir el mismo texto inicial.`;
       const systemInstruction = [identityInstruction, agent.systemPrompt || '', agent.personality ? `Personalidad: ${agent.personality}` : '', agent.description ? `Descripción: ${agent.description}` : ''].filter(Boolean).join('\\n\\n');
       let aiResponse: Response;
+      let requestHost = '';
       try {
         if (isAnthropic) {
           const base = (endpoint || 'https://api.anthropic.com/v1').replace(/\/+$/, '');
           const requestUrl = base.endsWith('/messages') ? base : base + '/messages';
+          const parsedUrl = new URL(requestUrl);
+          if (parsedUrl.protocol !== 'https:') throw new Error('Invalid provider URL protocol');
+          requestHost = parsedUrl.hostname;
           aiResponse = await fetch(requestUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
             body: JSON.stringify({ model: modelId, max_tokens: 2048, temperature: 0.7, ...(systemInstruction ? { system: systemInstruction } : {}), messages: [...history, { role: 'user', content: message }].map((item: any) => ({ role: item.role === 'assistant' ? 'assistant' : 'user', content: item.content })) }),
+            signal: AbortSignal.timeout(30000),
           });
         } else if (isGemini) {
-          const base = endpoint || 'https://generativelanguage.googleapis.com/v1beta';
-          aiResponse = await fetch(`${base}/models/${encodeURIComponent(modelId)}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+          const base = (endpoint || 'https://generativelanguage.googleapis.com/v1beta').replace(/\/+$/, '');
+          const requestUrl = base + '/models/' + encodeURIComponent(modelId) + ':generateContent?key=' + encodeURIComponent(apiKey);
+          const parsedUrl = new URL(requestUrl);
+          if (parsedUrl.protocol !== 'https:') throw new Error('Invalid provider URL protocol');
+          requestHost = parsedUrl.hostname;
+          aiResponse = await fetch(requestUrl, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ ...(systemInstruction ? { systemInstruction: { parts: [{ text: systemInstruction }] } } : {}), contents: [...history, { role: 'user', content: message }].map((item: any) => ({ role: item.role === 'assistant' ? 'model' : 'user', parts: [{ text: item.content }] })), generationConfig: { temperature: 0.7, maxOutputTokens: 2048 } }),
+            signal: AbortSignal.timeout(30000),
           });
         } else {
           const defaultBase = provider.includes('openrouter') ? 'https://openrouter.ai/api/v1'
@@ -348,15 +358,24 @@ export default {
             : provider.includes('mistral') ? 'https://api.mistral.ai/v1'
             : provider.includes('xai') ? 'https://api.x.ai/v1'
             : 'https://api.openai.com/v1';
-          const base = endpoint || defaultBase;
+          const base = (endpoint || defaultBase).replace(/\/+$/, '');
           const requestUrl = base.endsWith('/chat/completions') ? base : base + '/chat/completions';
+          const parsedUrl = new URL(requestUrl);
+          if (parsedUrl.protocol !== 'https:') throw new Error('Invalid provider URL protocol');
+          requestHost = parsedUrl.hostname;
           aiResponse = await fetch(requestUrl, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}`, ...(provider.includes('openrouter') ? { 'HTTP-Referer': 'https://anapse.github.io/BOT-IA-PC/', 'X-OpenRouter-Title': 'BOT IA PC' } : {}) },
+            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + apiKey, ...(provider.includes('openrouter') ? { 'HTTP-Referer': 'https://anapse.github.io/BOT-IA-PC/', 'X-OpenRouter-Title': 'BOT IA PC' } : {}) },
             body: JSON.stringify({ model: modelId, messages: [...(systemInstruction ? [{ role: 'system', content: systemInstruction }] : []), ...history, { role: 'user', content: message }], temperature: 0.7, max_tokens: 2048, stream: false }),
+            signal: AbortSignal.timeout(30000),
           });
         }
-      } catch { await send('No se pudo conectar con la IA. Inténtalo de nuevo.'); return json({ error: 'AI provider unavailable' }, 502); }
+      } catch (error) {
+        const errorName = error instanceof Error ? error.name : 'UnknownError';
+        console.error('Telegram AI request failed', { provider, modelId, requestHost: requestHost || 'invalid-url', errorName });
+        await send('No se pudo conectar con el proveedor ' + (provider.toUpperCase() || 'de IA') + ' (' + errorName + '). Revisa el endpoint y los registros de Cloudflare.');
+        return json({ error: 'AI provider unavailable', provider, errorName }, 502);
+      }
       const result: any = await aiResponse.json().catch(() => ({}));
       const rawReply = isAnthropic
         ? (Array.isArray(result?.content) ? result.content.map((part: any) => typeof part?.text === 'string' ? part.text : '').join('').trim() : '')
