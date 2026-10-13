@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Bot, Plus, Send, PanelLeftClose, PanelLeftOpen, MessageSquare, Trash2, Sparkles, ChevronDown, LoaderCircle, UserRound, AlertCircle, Image as ImageIcon, Mic, Video } from 'lucide-react';
+import { Bot, Plus, Send, PanelLeftClose, PanelLeftOpen, MessageSquare, Trash2, Sparkles, ChevronDown, LoaderCircle, UserRound, AlertCircle, Image as ImageIcon, Mic, Video, Paperclip, X, FileText, FileAudio, FileVideo } from 'lucide-react';
 import { subscribeCollection, getDocData } from '../services/firebase/db';
-import { sendAgentChatMessage, fetchProviderCatalog } from '../services/worker/client';
+import { sendAgentChatMessage, fetchProviderCatalog, type ChatFileAttachment, type ChatOutputAttachment } from '../services/worker/client';
 
 type Agent = { id: string; name: string; description?: string; model?: string; status?: 'activo' | 'inactivo' | 'pausado'; systemPrompt?: string; personality?: string };
 type ModelOption = { id: string; name: string; modelId?: string; provider?: string; connectionType?: 'cloud' | 'local'; status?: 'activo' | 'inactivo'; apiKey?: string };
 type ProviderOption = { id: string; name: string; type: string; endpoint?: string; apiKey?: string; status: 'activo' | 'inactivo' };
-type CatalogModel = { id: string; name: string; inputModalities?: string[]; outputModalities?: string[]; inputModalitiesKnown?: boolean; outputModalitiesKnown?: boolean };
-type ChatMessage = { id: string; role: 'user' | 'assistant'; content: string; createdAt: string; model?: string };
+type CatalogModel = { id: string; name: string; inputModalities?: string[]; outputModalities?: string[]; inputModalitiesKnown?: boolean; outputModalitiesKnown?: boolean; capabilitiesSource?: 'provider' | 'inferred' | 'unknown'; supportedGenerationMethods?: string[] };
+type ChatDisplayAttachment = { name: string; mimeType: string; data?: string; url?: string; size?: number };
+type ChatMessage = { id: string; role: 'user' | 'assistant'; content: string; createdAt: string; model?: string; attachments?: ChatDisplayAttachment[] };
 type TemporaryModel = { provider: string; modelId: string; name: string };
 type Conversation = { id: string; title: string; agentId: string; targetMode?: 'agent' | 'model'; targetId?: string; targetProviderId?: string; temporaryModel?: TemporaryModel; messages: ChatMessage[]; updatedAt: string };
 const normalizeCommand = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim().replace(/\s+/g, ' ');
@@ -36,6 +37,7 @@ export const ChatPage = () => {
   const [temporaryApiKey, setTemporaryApiKey] = useState('');
   const [targetSearch, setTargetSearch] = useState('');
   const [message, setMessage] = useState('');
+  const [pendingAttachments, setPendingAttachments] = useState<ChatFileAttachment[]>([]);
   const [workerUrl, setWorkerUrl] = useState('https://bot-ia-pc.elherreroanapse.workers.dev');
   const [loadingAgents, setLoadingAgents] = useState(true);
   const [sending, setSending] = useState(false);
@@ -43,6 +45,7 @@ export const ChatPage = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const unsubscribe = subscribeCollection('agents', data => {
@@ -105,7 +108,19 @@ export const ChatPage = () => {
     }
   }, [targetMode, selectedProviderId, providers]);
 
-  useEffect(() => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations)); } catch { /* storage unavailable */ } }, [conversations]);
+  useEffect(() => {
+    // Keep conversation history lightweight: file bytes stay in memory, not localStorage.
+    try {
+      const compact = conversations.map(item => ({
+        ...item,
+        messages: item.messages.map(entry => ({
+          ...entry,
+          attachments: entry.attachments?.map(file => ({ name: file.name, mimeType: file.mimeType, size: file.size, url: file.url })),
+        })),
+      }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(compact));
+    } catch { /* storage unavailable */ }
+  }, [conversations]);
   const activeConversation = conversations.find(item => item.id === activeConversationId) || null;
   const effectiveMode: 'agent' | 'model' = activeConversation?.targetMode || targetMode;
   const effectiveTargetId = activeConversation ? (activeConversation.targetId || activeConversation.agentId) : (targetMode === 'agent' ? selectedAgentId : selectedModelId);
@@ -134,13 +149,45 @@ export const ChatPage = () => {
   }, [conversations]);
 
   const startNewChat = (agentId = selectedAgentId) => {
-    setActiveConversationId(''); setTargetMode('agent'); setSelectedAgentId(agentId); setSelectedModelId(models[0]?.id || '__temporary__'); setMessage(''); setError('');
+    setActiveConversationId(''); setTargetMode('agent'); setSelectedAgentId(agentId); setSelectedModelId(models[0]?.id || '__temporary__'); setMessage(''); setPendingAttachments([]); setError('');
     setTimeout(() => textareaRef.current?.focus(), 0);
+  };
+  const handleFileSelection = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []);
+    event.target.value = '';
+    if (!files.length) return;
+    const allowed = (file: File) => /^(image\/(jpeg|png|gif|webp)|audio\/[a-z0-9.+-]+|video\/[a-z0-9.+-]+|application\/pdf)$/i.test(file.type);
+    const existingBytes = pendingAttachments.reduce((sum, item) => sum + Math.floor(item.data.length * 3 / 4), 0);
+    let totalBytes = existingBytes;
+    const next: ChatFileAttachment[] = [];
+    for (const file of files) {
+      if (!allowed(file)) { setError(`"${file.name}" no es un tipo compatible. Usa JPG, PNG, GIF, WebP, audio, vídeo o PDF.`); continue; }
+      if (file.size > 8 * 1024 * 1024) { setError(`"${file.name}" supera el límite de 8 MB por archivo.`); continue; }
+      if (totalBytes + file.size > 10 * 1024 * 1024) { setError('Los adjuntos superan el límite total de 10 MB.'); continue; }
+      const modality = file.type.startsWith('image/') ? 'image' : file.type.startsWith('audio/') ? 'audio' : file.type.startsWith('video/') ? 'video' : 'pdf';
+      if (effectiveMode === 'model' && selectedCatalogModel?.inputModalitiesKnown && !(selectedCatalogModel.inputModalities || []).includes(modality)) {
+        setError(`El modelo seleccionado no declara compatibilidad de entrada con ${modality === 'pdf' ? 'PDF/documentos' : modality}. Selecciona otro modelo para adjuntar este archivo.`);
+        continue;
+      }
+      try {
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('No se pudo leer el archivo.'));
+          reader.onerror = () => reject(new Error('No se pudo leer el archivo.'));
+          reader.readAsDataURL(file);
+        });
+        const data = dataUrl.split(',')[1] || '';
+        next.push({ name: file.name, mimeType: file.type, data });
+        totalBytes += file.size;
+      } catch { setError(`No se pudo leer "${file.name}".`); }
+    }
+    if (next.length) { setPendingAttachments(current => [...current, ...next]); setError(''); }
   };
   const handleSend = async (event?: React.FormEvent) => {
     event?.preventDefault();
     const rawText = message.trim();
-    if (!rawText || sending) return;
+    const outgoingAttachments = pendingAttachments;
+    if ((!rawText && !outgoingAttachments.length) || sending) return;
     setError('');
 
     let outgoingText = rawText;
@@ -189,9 +236,14 @@ ${agents.map(agent => `• $${aliasFor(agent)} — ${agent.name}`).join('\\n')}`
       }
     }
 
-    setSending(true); setMessage('');
+    setSending(true); setMessage(''); setPendingAttachments([]);
     const now = new Date().toISOString();
-    const userMessage: ChatMessage = { id: makeId(), role: 'user', content: rawText, createdAt: now };
+    const userMessage: ChatMessage = {
+      id: makeId(), role: 'user',
+      content: rawText || (outgoingAttachments.length ? 'Archivo adjunto' : ''),
+      createdAt: now,
+      attachments: outgoingAttachments.map(item => ({ name: item.name, mimeType: item.mimeType, size: Math.floor(item.data.length * 3 / 4) })),
+    };
     let conversation = activeConversation;
     if (!conversation || mode !== (conversation.targetMode || 'agent') || targetId !== (conversation.targetId || conversation.agentId)) {
       conversation = { id: makeId(), title: rawText.length > 42 ? `${rawText.slice(0, 42).trim()}…` : rawText, agentId: mode === 'agent' ? targetId : '', targetMode: mode, targetId, ...(mode === 'model' ? { targetProviderId: providerIdForRequest } : {}), messages: [], updatedAt: now };
@@ -223,9 +275,13 @@ ${agents.map(agent => `• $${aliasFor(agent)} — ${agent.name}`).join('\\n')}`
           previousMessages.map(item => ({ role: item.role, content: item.content })),
           mode,
           mode === 'model' ? temporaryModel : undefined,
-          mode === 'model' ? providerIdForRequest : undefined
+          mode === 'model' ? providerIdForRequest : undefined,
+          outgoingAttachments
         );
-        const reply: ChatMessage = { id: makeId(), role: 'assistant', content: result.reply, createdAt: new Date().toISOString(), model: result.model };
+        const reply: ChatMessage = {
+          id: makeId(), role: 'assistant', content: result.reply, createdAt: new Date().toISOString(), model: result.model,
+          attachments: (result.attachments || []) as ChatOutputAttachment[],
+        };
         setConversations(current => current.map(item => item.id === conversationId ? { ...item, messages: [...item.messages, reply], updatedAt: reply.createdAt } : item));
       }
     } catch (err: any) { setError(err?.message || 'No se pudo enviar el mensaje.'); }
@@ -284,7 +340,18 @@ ${agents.map(agent => `• $${aliasFor(agent)} — ${agent.name}`).join('\\n')}`
           <div className="mt-7 grid w-full max-w-xl grid-cols-1 gap-2 sm:grid-cols-2">{['Explícame algo paso a paso','Ayúdame a resolver un problema','Dame ideas para un proyecto','Resume este texto'].map(suggestion => <button key={suggestion} onClick={() => setMessage(suggestion)} className="rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-3 text-left text-xs sm:text-sm text-slate-300 hover:border-slate-600 hover:bg-slate-900 transition-colors">{suggestion}</button>)}</div>
         </div> : <div className="space-y-7 pb-6">{currentMessages.map(item => <div key={item.id} className={`flex gap-3 sm:gap-4 ${item.role === 'user' ? 'justify-end' : 'justify-start'}`}>
           {item.role === 'assistant' && <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-cyan-950 text-cyan-300"><Bot size={17}/></div>}
-          <div className={`max-w-[88%] min-w-0 sm:max-w-[82%] ${item.role === 'user' ? 'rounded-2xl rounded-br-md bg-slate-800 px-4 py-3' : 'pt-1'}`}>{item.role === 'assistant' && <p className="mb-2 text-xs font-semibold text-slate-300">{effectiveMode === 'model' ? (temporarySelected ? temporaryLabel : (selectedCatalogModel?.name || selectedModel?.name || 'Modelo IA')) : (selectedAgent?.name || 'Agente IA')}</p>}<div className="whitespace-pre-wrap break-words text-sm leading-7 text-slate-200">{item.content}</div>{item.model && <p className="mt-2 text-[10px] text-slate-600">Modelo: {item.model}</p>}</div>
+          <div className={`max-w-[88%] min-w-0 sm:max-w-[82%] ${item.role === 'user' ? 'rounded-2xl rounded-br-md bg-slate-800 px-4 py-3' : 'pt-1'}`}>{item.role === 'assistant' && <p className="mb-2 text-xs font-semibold text-slate-300">{effectiveMode === 'model' ? (temporarySelected ? temporaryLabel : (selectedCatalogModel?.name || selectedModel?.name || 'Modelo IA')) : (selectedAgent?.name || 'Agente IA')}</p>}{item.content && <div className="whitespace-pre-wrap break-words text-sm leading-7 text-slate-200">{item.content}</div>}
+            {item.attachments?.length ? <div className="mt-3 flex flex-col gap-2">{item.attachments.map((file, index) => {
+              const src = file.url || (file.data ? `data:${file.mimeType};base64,${file.data}` : '');
+              return <div key={`${file.name}-${index}`} className="max-w-full">
+                {file.mimeType.startsWith('image/') && src && <img src={src} alt={file.name} className="max-h-80 max-w-full rounded-xl border border-slate-700 object-contain" loading="lazy" />}
+                {file.mimeType.startsWith('audio/') && src && <audio controls preload="metadata" src={src} className="max-w-full" />}
+                {file.mimeType.startsWith('video/') && src && <video controls preload="metadata" src={src} className="max-h-80 max-w-full rounded-xl border border-slate-700" />}
+                {file.mimeType === 'application/pdf' && src && <a href={src} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-xs text-cyan-300 hover:bg-slate-800"><FileText size={15} /> Abrir {file.name}</a>}
+                {!src && <span className="inline-flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-400"><Paperclip size={14} /> {file.name}</span>}
+              </div>;
+            })}</div> : null}
+            {item.model && <p className="mt-2 text-[10px] text-slate-600">Modelo: {item.model}</p>}</div>
           {item.role === 'user' && <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-700 text-slate-200"><UserRound size={16}/></div>}
         </div>)}{sending && <div className="flex gap-3"><div className="flex h-8 w-8 items-center justify-center rounded-full bg-cyan-950 text-cyan-300"><Bot size={17}/></div><div className="flex items-center gap-2 pt-1 text-sm text-slate-400"><LoaderCircle size={16} className="animate-spin"/>{effectiveMode === 'model' ? (temporarySelected ? temporaryLabel : (selectedCatalogModel?.name || selectedModel?.name || 'El modelo')) : (selectedAgent?.name || 'El agente')} está pensando…</div></div>}<div ref={messagesEndRef}/></div>}
       </div></div>
@@ -298,11 +365,16 @@ ${agents.map(agent => `• $${aliasFor(agent)} — ${agent.name}`).join('\\n')}`
               {(selectedCatalogModel.inputModalities || []).includes('image') && <span title="Acepta imágenes como entrada" className="inline-flex items-center gap-1 rounded-md border border-cyan-800/70 bg-cyan-950/50 px-1.5 py-1 text-[10px] text-cyan-300"><ImageIcon size={12}/> Imagen</span>}
               {(selectedCatalogModel.inputModalities || []).includes('audio') && <span title="Acepta audio como entrada" className="inline-flex items-center gap-1 rounded-md border border-cyan-800/70 bg-cyan-950/50 px-1.5 py-1 text-[10px] text-cyan-300"><Mic size={12}/> Audio</span>}
               {(selectedCatalogModel.inputModalities || []).includes('video') && <span title="Acepta vídeo como entrada" className="inline-flex items-center gap-1 rounded-md border border-cyan-800/70 bg-cyan-950/50 px-1.5 py-1 text-[10px] text-cyan-300"><Video size={12}/> Vídeo</span>}
-              {!(selectedCatalogModel.inputModalities || []).some(modality => ['image', 'audio', 'video'].includes(modality)) && <span className="rounded-md border border-slate-700 px-1.5 py-1 text-[10px] text-slate-400">Solo texto</span>}
+              {(selectedCatalogModel.inputModalities || []).includes('pdf') && <span className="inline-flex items-center gap-1 rounded-md border border-cyan-800/70 bg-cyan-950/50 px-1.5 py-1 text-[10px] text-cyan-300"><FileText size={12}/> PDF</span>}
+              {!(selectedCatalogModel.inputModalities || []).some(modality => ['image', 'audio', 'video', 'pdf'].includes(modality)) && <span className="rounded-md border border-slate-700 px-1.5 py-1 text-[10px] text-slate-400">Solo texto</span>}
+              {(selectedCatalogModel.outputModalities || []).filter(modality => modality !== 'text').map(modality => <span key={modality} className="rounded-md border border-violet-800/70 bg-violet-950/40 px-1.5 py-1 text-[10px] text-violet-300">Salida: {modality}</span>)}
+              {selectedCatalogModel.capabilitiesSource === 'inferred' && <span title="Modalidades estimadas a partir de la familia del modelo y sus métodos declarados" className="rounded-md border border-amber-900/70 bg-amber-950/30 px-1.5 py-1 text-[10px] text-amber-300">Capacidades estimadas</span>}
             </> : <span title="El proveedor no publicó metadatos suficientes para verificar las modalidades de entrada" className="rounded-md border border-amber-900/70 bg-amber-950/30 px-1.5 py-1 text-[10px] text-amber-300">Capacidades sin verificar</span>}
           </div>}
+          {pendingAttachments.length > 0 && <div className="flex flex-wrap gap-2 border-b border-slate-800 px-3 py-2">{pendingAttachments.map((file, index) => <div key={`${file.name}-${index}`} className="inline-flex max-w-full items-center gap-2 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-300"><Paperclip size={13} className="shrink-0 text-cyan-300"/><span className="max-w-[180px] truncate">{file.name}</span><button type="button" aria-label={`Quitar ${file.name}`} onClick={() => setPendingAttachments(current => current.filter((_, i) => i !== index))} className="rounded p-0.5 text-slate-500 hover:text-red-300"><X size={13}/></button></div>)}</div>}
+          <input ref={fileInputRef} type="file" multiple accept="image/jpeg,image/png,image/gif,image/webp,audio/*,video/*,application/pdf" onChange={event => void handleFileSelection(event)} className="hidden" />
           <textarea ref={textareaRef} value={message} onChange={event => setMessage(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void handleSend(); } }} placeholder={effectiveMode === 'model' ? `Escribe a ${temporarySelected ? temporaryLabel : (selectedCatalogModel?.name || selectedModel?.name || 'el modelo')}…` : selectedAgent ? `Escribe a ${selectedAgent.name}…` : 'Activa o crea un agente para empezar…'} rows={2} disabled={(effectiveMode === 'model' ? (!selectedCatalogModel && !selectedModel && !temporarySelected) : !selectedAgent) || sending} className="max-h-40 min-h-[58px] w-full resize-y bg-transparent px-4 pt-4 pb-2 text-sm text-slate-100 placeholder:text-slate-500 outline-none disabled:opacity-50"/>
-          <div className="flex items-center justify-between gap-3 px-3 pb-3"><p className="text-[10px] text-slate-600">Enter para enviar · Shift + Enter para nueva línea</p><button type="submit" disabled={!message.trim() || (effectiveMode === 'model' ? (temporarySelected ? !temporaryReady : (!selectedCatalogModel && !selectedModel)) : !selectedAgent) || sending} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-cyan-600 text-white transition-colors hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-40" title="Enviar mensaje">{sending ? <LoaderCircle size={17} className="animate-spin"/> : <Send size={16}/>}</button></div>
+          <div className="flex items-center justify-between gap-3 px-3 pb-3"><div className="flex min-w-0 items-center gap-2"><button type="button" onClick={() => fileInputRef.current?.click()} disabled={sending || (effectiveMode === 'model' && !selectedCatalogModel && !selectedModel && !temporarySelected) || (effectiveMode === 'agent' && !selectedAgent)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-40" title="Adjuntar imagen, audio, vídeo o PDF"><Paperclip size={16}/></button><p className="text-[10px] text-slate-600">Enter para enviar · Shift + Enter para nueva línea</p></div><button type="submit" disabled={(!message.trim() && !pendingAttachments.length) || (effectiveMode === 'model' ? (temporarySelected ? !temporaryReady : (!selectedCatalogModel && !selectedModel)) : !selectedAgent) || sending} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-cyan-600 text-white transition-colors hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-40" title="Enviar mensaje">{sending ? <LoaderCircle size={17} className="animate-spin"/> : <Send size={16}/>}</button></div>
         </form><p className="mt-2 text-center text-[10px] text-slate-600">En modo Agente se aplica su personalidad; en modo Modelo se consulta directamente. Los modelos temporales no se registran y requieren volver a introducir la clave al recargar.</p>
       </div></div>
     </section>
