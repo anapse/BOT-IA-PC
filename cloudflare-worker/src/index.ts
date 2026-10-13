@@ -82,6 +82,47 @@ export default {
         return json({ models, count: models.length });
       } catch { return json({ error: 'No se pudo consultar el catálogo del proveedor.' }, 502); }
     }
+    if (url.pathname === '/providers/test' && request.method === 'POST') {
+      let input: any;
+      try { input = await request.json(); } catch { return json({ error: 'El cuerpo debe ser JSON válido.' }, 400); }
+      const type = String(input?.type || '').toLowerCase();
+      const apiKey = typeof input?.apiKey === 'string' ? input.apiKey.trim() : '';
+      let base = typeof input?.endpoint === 'string' ? input.endpoint.trim() : '';
+      if (!apiKey) return json({ error: 'Introduce una API key para probar la conexión.' }, 400);
+      const defaults: Record<string, string> = {
+        openai: 'https://api.openai.com/v1',
+        anthropic: 'https://api.anthropic.com/v1',
+        google: 'https://generativelanguage.googleapis.com/v1beta',
+        openrouter: 'https://openrouter.ai/api/v1',
+        nvidia: 'https://integrate.api.nvidia.com/v1',
+      };
+      base = (base || defaults[type] || '').replace(/\/+$/, '');
+      if (!base) return json({ error: 'Configura un endpoint HTTPS válido.' }, 400);
+      let parsed: URL;
+      try { parsed = new URL(base); } catch { return json({ error: 'El endpoint no es una URL válida.' }, 400); }
+      if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1' || parsed.hostname === '::1') {
+        return json({ error: 'El endpoint debe usar HTTPS y no puede incluir credenciales ni localhost.' }, 400);
+      }
+      let testUrl = base + '/models';
+      const headers: Record<string, string> = { Authorization: 'Bearer ' + apiKey };
+      if (type === 'google') { testUrl = base + '/models?key=' + encodeURIComponent(apiKey); delete headers.Authorization; }
+      if (type === 'anthropic') { headers['x-api-key'] = apiKey; headers['anthropic-version'] = '2023-06-01'; delete headers.Authorization; }
+      try {
+        const upstream = await fetch(testUrl, { headers, signal: AbortSignal.timeout(12000) });
+        const payload: any = await upstream.json().catch(() => ({}));
+        if (!upstream.ok) {
+          const detail = typeof payload?.error?.message === 'string' ? payload.error.message
+            : typeof payload?.message === 'string' ? payload.message
+            : typeof payload?.detail === 'string' ? payload.detail : 'El proveedor rechazó la conexión.';
+          return json({ ok: false, error: 'Prueba fallida (HTTP ' + upstream.status + '): ' + detail.slice(0, 220) }, 400);
+        }
+        const list = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload?.models) ? payload.models : [];
+        return json({ ok: true, provider: type, modelsAvailable: list.length, message: 'La API key y el endpoint respondieron correctamente.' });
+      } catch {
+        return json({ error: 'No se pudo contactar con el endpoint. Revisa la URL y la conexión.' }, 502);
+      }
+    }
+
     if (url.pathname === '/status' && request.method === 'GET') {
       return json({ status: 'ok', version: '1.0.0' });
     }
