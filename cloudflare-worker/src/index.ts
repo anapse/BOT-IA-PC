@@ -43,6 +43,43 @@ function formatTelegramText(value: string): string {
     .trim();
 }
 
+
+type ChatAttachment = { name: string; mimeType: string; data: string };
+
+function extractOutputAttachments(providerResult: any, isGemini: boolean, isAnthropic: boolean) {
+  const attachments: Array<{ name: string; mimeType: string; data?: string; url?: string }> = [];
+  const parts = isGemini
+    ? (Array.isArray(providerResult?.candidates?.[0]?.content?.parts) ? providerResult.candidates[0].content.parts : [])
+    : isAnthropic
+      ? (Array.isArray(providerResult?.content) ? providerResult.content : [])
+      : (Array.isArray(providerResult?.choices?.[0]?.message?.content) ? providerResult.choices[0].message.content : []);
+  for (const part of parts) {
+    const inline = part?.inlineData || part?.inline_data;
+    if (inline && typeof inline.data === 'string' && typeof (inline.mimeType || inline.mime_type) === 'string') {
+      const mimeType = String(inline.mimeType || inline.mime_type);
+      if (/^(image|audio|video)\//i.test(mimeType) && inline.data.length <= 14_000_000) {
+        attachments.push({ name: `respuesta-${attachments.length + 1}`, mimeType, data: inline.data });
+      }
+      continue;
+    }
+    const source = part?.source;
+    if (source?.type === 'base64' && typeof source.data === 'string' && typeof source.media_type === 'string' && /^image\//i.test(source.media_type)) {
+      if (source.data.length <= 14_000_000) attachments.push({ name: `respuesta-${attachments.length + 1}`, mimeType: source.media_type, data: source.data });
+      continue;
+    }
+    const imageUrl = part?.image_url?.url || part?.imageUrl?.url;
+    if (typeof imageUrl === 'string') {
+      if (imageUrl.startsWith('data:')) {
+        const match = imageUrl.match(/^data:([^;,]+);base64,([\s\S]+)$/);
+        if (match && match[2].length <= 14_000_000) attachments.push({ name: `respuesta-${attachments.length + 1}`, mimeType: match[1], data: match[2] });
+      } else if (/^https:\/\//i.test(imageUrl)) {
+        attachments.push({ name: `respuesta-${attachments.length + 1}`, mimeType: 'image/remote', url: imageUrl });
+      }
+    }
+  }
+  return attachments;
+}
+
 export default {
   async fetch(request: Request, env: any) {
     const url = new URL(request.url);
@@ -506,8 +543,25 @@ export default {
         const agentId = typeof input?.agentId === 'string' ? input.agentId : (mode === 'agent' && typeof input?.targetId === 'string' ? input.targetId : '');
         const requestedModelId = typeof input?.modelId === 'string' ? input.modelId : (mode === 'model' && typeof input?.targetId === 'string' ? input.targetId : '');
         const message = typeof input?.message === 'string' ? input.message.trim() : '';
+        const rawAttachments = Array.isArray(input?.attachments) ? input.attachments.slice(0, 4) : [];
+        const attachments: ChatAttachment[] = [];
+        let totalAttachmentChars = 0;
+        for (const item of rawAttachments) {
+          const name = typeof item?.name === 'string' ? item.name.slice(0, 160) : 'archivo';
+          const mimeType = typeof item?.mimeType === 'string' ? item.mimeType.toLowerCase().trim() : '';
+          const data = typeof item?.data === 'string' ? item.data : '';
+          if (!/^(image\/(jpeg|png|gif|webp)|audio\/[a-z0-9.+-]+|video\/[a-z0-9.+-]+|application\/pdf)$/i.test(mimeType)) {
+            return json({ error: `Tipo de archivo no admitido: ${name}. Usa imágenes, audio, vídeo o PDF.` }, 415);
+          }
+          if (!data || !/^[A-Za-z0-9+/]+={0,2}$/.test(data) || data.length > 10_700_000) {
+            return json({ error: `El archivo "${name}" está vacío o supera el límite permitido de 8 MB.` }, 413);
+          }
+          totalAttachmentChars += data.length;
+          if (totalAttachmentChars > 14_000_000) return json({ error: 'Los archivos adjuntos superan el límite total de 10 MB.' }, 413);
+          attachments.push({ name, mimeType, data });
+        }
         const history = Array.isArray(input?.history) ? input.history.slice(-20).filter((item: any) => (item?.role === 'user' || item?.role === 'assistant') && typeof item?.content === 'string').map((item: any) => ({ role: item.role, content: item.content.slice(0, 12000) })) : [];
-        if ((mode === 'agent' ? !agentId : !requestedModelId) || !message) return json({ error: 'El destino y el mensaje son obligatorios.' }, 400);
+        if ((mode === 'agent' ? !agentId : !requestedModelId) || (!message && !attachments.length)) return json({ error: 'El destino y un mensaje o archivo adjunto son obligatorios.' }, 400);
         if (message.length > 12000) return json({ error: 'El mensaje supera el límite de 12000 caracteres.' }, 413);
         const config = await storage.getConfig();
         const agent = mode === 'agent' ? (Array.isArray(config.agents) ? config.agents.find((item: any) => item?.id === agentId) : null) : null;
@@ -569,18 +623,38 @@ export default {
 
         const systemInstruction = mode === 'agent' ? ['No repitas presentaciones ni saludos al principio de cada respuesta. Preséntate solo si el usuario pregunta quién eres; responde directamente a la consulta y varía la redacción de forma natural.', agent?.systemPrompt || '', agent?.personality ? `Personalidad: ${agent.personality}` : '', agent?.description ? `Descripción: ${agent.description}` : ''].filter(Boolean).join('\\n\\n') : '';
         const safeHistory = history.map((item: any) => ({ role: item.role, content: item.content }));
+        if (isAnthropic && attachments.some(item => item.mimeType.startsWith('audio/') || item.mimeType.startsWith('video/'))) {
+          return json({ error: 'La API de mensajes de Anthropic no admite este audio o vídeo como adjunto directo. Usa un modelo compatible con esa modalidad o convierte el contenido a texto.' }, 415);
+        }
+        if (!isGemini && !isAnthropic && attachments.some(item => item.mimeType.startsWith('video/') || item.mimeType === 'application/pdf')) {
+          return json({ error: 'Este proveedor usa una API compatible con Chat Completions que no ofrece un formato universal para vídeo o PDF. Selecciona un modelo/API que admita esa entrada.' }, 415);
+        }
+        if (!isGemini && !isAnthropic && attachments.some(item => item.mimeType.startsWith('audio/') && !['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav'].includes(item.mimeType))) {
+          return json({ error: 'Para audio en esta API, usa MP3 o WAV. La compatibilidad final depende del modelo seleccionado.' }, 415);
+        }
         let upstream: Response;
         try {
           if (isAnthropic) {
+            const anthropicContent: any[] = [];
+            if (message) anthropicContent.push({ type: 'text', text: message });
+            for (const item of attachments) {
+              if (item.mimeType.startsWith('image/')) anthropicContent.push({ type: 'image', source: { type: 'base64', media_type: item.mimeType, data: item.data } });
+              else if (item.mimeType === 'application/pdf') anthropicContent.push({ type: 'document', source: { type: 'base64', media_type: item.mimeType, data: item.data } });
+            }
             upstream = await fetch((endpoint ? endpoint.replace(/\/+$/, '') : 'https://api.anthropic.com/v1') + '/messages', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'false' },
-              body: JSON.stringify({ model: modelId, max_tokens: 2048, temperature: 0.7, ...(systemInstruction ? { system: systemInstruction } : {}), messages: [...safeHistory, { role: 'user', content: message }].map((item: any) => ({ role: item.role === 'assistant' ? 'assistant' : 'user', content: item.content })) }),
+              body: JSON.stringify({ model: modelId, max_tokens: 2048, temperature: 0.7, ...(systemInstruction ? { system: systemInstruction } : {}), messages: [...safeHistory, { role: 'user', content: anthropicContent.length ? anthropicContent : message }].map((item: any) => ({ role: item.role === 'assistant' ? 'assistant' : 'user', content: item.content })) }),
+              signal: AbortSignal.timeout(45000),
             });
           } else if (isGemini) {
+            const currentParts: any[] = [];
+            if (message) currentParts.push({ text: message });
+            for (const item of attachments) currentParts.push({ inlineData: { mimeType: item.mimeType, data: item.data } });
             upstream = await fetch((endpoint ? endpoint.replace(/\/+$/, '') : 'https://generativelanguage.googleapis.com/v1beta') + `/models/${encodeURIComponent(modelId)}:generateContent?key=${encodeURIComponent(apiKey)}`, {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ ...(systemInstruction ? { systemInstruction: { parts: [{ text: systemInstruction }] } } : {}), contents: [...safeHistory, { role: 'user', content: message }].map((item: any) => ({ role: item.role === 'assistant' ? 'model' : 'user', parts: [{ text: item.content }] })), generationConfig: { temperature: 0.7, maxOutputTokens: 2048 } }),
+              body: JSON.stringify({ ...(systemInstruction ? { systemInstruction: { parts: [{ text: systemInstruction }] } } : {}), contents: [...safeHistory.map((item: any) => ({ role: item.role === 'assistant' ? 'model' : 'user', parts: [{ text: item.content }] })), { role: 'user', parts: currentParts }], generationConfig: { temperature: 0.7, maxOutputTokens: 2048 } }),
+              signal: AbortSignal.timeout(45000),
             });
           } else {
             const defaultEndpoint = provider.includes('openrouter') ? 'https://openrouter.ai/api/v1/chat/completions'
@@ -592,12 +666,19 @@ export default {
               : provider.includes('mistral') ? 'https://api.mistral.ai/v1/chat/completions'
               : provider.includes('xai') ? 'https://api.x.ai/v1/chat/completions'
               : 'https://api.openai.com/v1/chat/completions';
-            // Temporary models use fixed provider URLs, not user-controlled endpoints.
             const requestEndpoint = temporary ? defaultEndpoint : (endpoint ? (endpoint.replace(/\/+$/, '').endsWith('/chat/completions') ? endpoint.replace(/\/+$/, '') : endpoint.replace(/\/+$/, '') + '/chat/completions') : defaultEndpoint);
+            const currentContent: any[] = [];
+            if (message) currentContent.push({ type: 'text', text: message });
+            for (const item of attachments) {
+              if (item.mimeType.startsWith('image/')) currentContent.push({ type: 'image_url', image_url: { url: `data:${item.mimeType};base64,${item.data}` } });
+              else if (item.mimeType.startsWith('audio/')) currentContent.push({ type: 'input_audio', input_audio: { data: item.data, format: item.mimeType.includes('wav') ? 'wav' : 'mp3' } });
+            }
+            const currentUserContent = attachments.length ? currentContent : message;
             upstream = await fetch(requestEndpoint, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}`, ...(provider.includes('openrouter') ? { 'HTTP-Referer': 'https://anapse.github.io/BOT-IA-PC/', 'X-OpenRouter-Title': 'BOT IA PC' } : {}) },
-              body: JSON.stringify({ model: modelId, messages: [...(systemInstruction ? [{ role: 'system', content: systemInstruction }] : []), ...safeHistory, { role: 'user', content: message }], temperature: 0.7, max_tokens: 2048, stream: false }),
+              body: JSON.stringify({ model: modelId, messages: [...(systemInstruction ? [{ role: 'system', content: systemInstruction }] : []), ...safeHistory, { role: 'user', content: currentUserContent }], temperature: 0.7, max_tokens: 2048, stream: false }),
+              signal: AbortSignal.timeout(45000),
             });
           }
         } catch { return json({ error: 'No se pudo conectar con el proveedor de IA.' }, 502); }
@@ -610,9 +691,10 @@ export default {
           ? (Array.isArray(result?.content) ? result.content.map((part: any) => typeof part?.text === 'string' ? part.text : '').join('').trim() : '')
           : isGemini
             ? (Array.isArray(result?.candidates?.[0]?.content?.parts) ? result.candidates[0].content.parts.map((part: any) => typeof part?.text === 'string' ? part.text : '').join('').trim() : '')
-            : (typeof result?.choices?.[0]?.message?.content === 'string' ? result.choices[0].message.content.trim() : '');
-        if (!reply) return json({ error: `${provider.toUpperCase()} respondió, pero no devolvió texto. Revisa el ID del modelo o sus permisos.` }, 502);
-        return json({ status: 'ok', reply, model: modelId });
+            : (typeof result?.choices?.[0]?.message?.content === 'string' ? result.choices[0].message.content.trim() : (Array.isArray(result?.choices?.[0]?.message?.content) ? result.choices[0].message.content.map((part: any) => typeof part?.text === 'string' ? part.text : '').join('').trim() : ''));
+        const outputAttachments = extractOutputAttachments(result, isGemini, isAnthropic);
+        if (!reply && !outputAttachments.length) return json({ error: `${provider.toUpperCase()} respondió, pero no devolvió contenido compatible. Revisa el ID del modelo o sus permisos.` }, 502);
+        return json({ status: 'ok', reply, attachments: outputAttachments, model: modelId });
       }
 
       let config;
