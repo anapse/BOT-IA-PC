@@ -30,7 +30,7 @@ const SvgPreview = ({ source }: { source: string }) => {
   const [visible, setVisible] = useState(false);
   const [imageError, setImageError] = useState(false);
   const svg = normalizeSvg(source.trim());
-  const src = \`data:image/svg+xml;charset=utf-8,\${encodeURIComponent(svg)}\`;
+  const src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 
   return <div className="my-3 max-w-full">
     <button type="button" onClick={() => { setVisible(value => !value); setImageError(false); }} className="inline-flex items-center gap-2 rounded-lg border border-cyan-800 bg-cyan-950/50 px-3 py-2 text-xs font-medium text-cyan-300 transition-colors hover:bg-cyan-900/60">
@@ -51,7 +51,7 @@ const SvgPreview = ({ source }: { source: string }) => {
 };
 
 const MessageContent = ({ content }: { content: string }) => {
-  const pattern = /(\`\`\`(?:svg|xml|html)?[ \t]*\n?[\s\S]*?\`\`\`|(?:\\<|<)svg\b[\s\S]*?(?:\\<\/svg>|<\/svg>)|!\[([^\]]*)\]\((https?:\/\/[^\s)]+|data:image\/[^\s)]+)\))/gi;
+  const pattern = /(```(?:svg|xml|html)?[ \t]*\n?[\s\S]*?```|(?:\\<|<)svg\b[\s\S]*?(?:\\<\/svg>|<\/svg>)|!\[([^\]]*)\]\((https?:\/\/[^\s)]+|data:image\/[^\s)]+)\))/gi;
   const parts: React.ReactNode[] = [];
   let cursor = 0;
   let match: RegExpExecArray | null;
@@ -60,23 +60,23 @@ const MessageContent = ({ content }: { content: string }) => {
   while ((match = pattern.exec(content)) !== null) {
     const token = match[0];
     if (match.index > cursor) {
-      parts.push(<span key={\`text-\${cursor}\`} className="whitespace-pre-wrap break-words">{content.slice(cursor, match.index)}</span>);
+      parts.push(<span key={`text-${cursor}`} className="whitespace-pre-wrap break-words">{content.slice(cursor, match.index)}</span>);
     }
 
-    if (token.startsWith('\`\`\`')) {
-      const body = token.replace(/^\`\`\`(?:svg|xml|html)?[ \t]*\n?/, '').replace(/\`\`\`$/, '').trim();
+    if (token.startsWith('```')) {
+      const body = token.replace(/^```(?:svg|xml|html)?[ \t]*\n?/, '').replace(/```$/, '').trim();
       const normalizedBody = normalizeSvg(body);
       if (/<svg\b/i.test(normalizedBody) && /<\/svg\s*>/i.test(normalizedBody)) {
-        parts.push(<SvgPreview key={\`svg-\${tokenIndex++}\`} source={normalizedBody} />);
+        parts.push(<SvgPreview key={`svg-${tokenIndex++}`} source={normalizedBody} />);
       } else {
-        parts.push(<span key={\`code-\${tokenIndex++}\`} className="whitespace-pre-wrap break-words">{token}</span>);
+        parts.push(<span key={`code-${tokenIndex++}`} className="whitespace-pre-wrap break-words">{token}</span>);
       }
     } else if (/<svg\b/i.test(normalizeSvg(token)) && /<\/svg\s*>/i.test(normalizeSvg(token))) {
-      parts.push(<SvgPreview key={\`svg-\${tokenIndex++}\`} source={token} />);
+      parts.push(<SvgPreview key={`svg-${tokenIndex++}`} source={token} />);
     } else {
       const alt = match[2]?.trim() || 'Imagen generada';
       const src = match[3];
-      parts.push(<figure key={\`image-\${tokenIndex++}\`} className="my-3 max-w-full">
+      parts.push(<figure key={`image-${tokenIndex++}`} className="my-3 max-w-full">
         <img src={src} alt={alt} loading="lazy" className="max-h-[560px] max-w-full rounded-xl border border-slate-700 bg-slate-900 object-contain" />
         {alt !== 'Imagen generada' && <figcaption className="mt-1 text-xs text-slate-500">{alt}</figcaption>}
       </figure>);
@@ -85,7 +85,7 @@ const MessageContent = ({ content }: { content: string }) => {
   }
 
   if (cursor < content.length) {
-    parts.push(<span key={\`text-\${cursor}\`} className="whitespace-pre-wrap break-words">{content.slice(cursor)}</span>);
+    parts.push(<span key={`text-${cursor}`} className="whitespace-pre-wrap break-words">{content.slice(cursor)}</span>);
   }
   return parts.length ? <>{parts}</> : content;
 };
