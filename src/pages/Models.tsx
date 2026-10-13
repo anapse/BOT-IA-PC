@@ -33,7 +33,13 @@ export const ModelsPage = () => {
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [catalogModels, setCatalogModels] = useState<{ id: string; name: string; contextLength?: number | null }[]>([]);
+  const [catalogSearch, setCatalogSearch] = useState('');
   const [loadingCatalog, setLoadingCatalog] = useState(false);
+
+  const filteredCatalogModels = catalogModels.filter((item) => {
+    const search = catalogSearch.trim().toLowerCase();
+    return !search || `${item.name} ${item.id}`.toLowerCase().includes(search);
+  });
 
   useEffect(() => {
     const unsub = subscribeCollection('modelConfigs', (data) => {
@@ -53,6 +59,7 @@ export const ModelsPage = () => {
       const items = Array.isArray(result.models) ? result.models : [];
       if (items.length === 0) throw new Error('La API no devolvió modelos disponibles para esta clave.');
       setCatalogModels(items);
+      setCatalogSearch(provider === 'OpenRouter' ? 'free' : '');
       const selected = items.find((item: any) => item.id === modelId);
       if (!selected) { setModelId(items[0].id); if (!name.trim()) setName(items[0].name); }
     } catch (err: any) { setErrorMsg(err.message || 'Error consultando el catálogo.'); }
@@ -292,9 +299,16 @@ export const ModelsPage = () => {
               />
               {catalogModels.length > 0 && (
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-slate-300">Modelos encontrados ({catalogModels.length})</label>
-                  <select value={modelId} onChange={(e) => { const item = catalogModels.find((entry) => entry.id === e.target.value); setModelId(e.target.value); if (item && !name.trim()) setName(item.name); }} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-sm text-slate-200">
-                    {catalogModels.map((item) => <option key={item.id} value={item.id}>{item.name} — {item.id}</option>)}
+                  <label className="text-xs font-medium text-slate-300">Buscar modelo ({filteredCatalogModels.length} de {catalogModels.length})</label>
+                  <input
+                    value={catalogSearch}
+                    onChange={(e) => setCatalogSearch(e.target.value)}
+                    placeholder={provider === 'OpenRouter' ? 'Escribe free para ver solo los gratuitos' : 'Buscar por nombre o identificador'}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-sm text-slate-200 focus:outline-none focus:border-cyan-500"
+                  />
+                  <select value={filteredCatalogModels.some((entry) => entry.id === modelId) ? modelId : ''} onChange={(e) => { const item = filteredCatalogModels.find((entry) => entry.id === e.target.value); if (item) { setModelId(item.id); if (!name.trim()) setName(item.name); } }} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-sm text-slate-200">
+                    <option value="" disabled>{filteredCatalogModels.length ? 'Selecciona un modelo' : 'No hay modelos que coincidan'}</option>
+                    {filteredCatalogModels.map((item) => <option key={item.id} value={item.id}>{item.name} — {item.id}</option>)}
                   </select>
                 </div>
               )}
