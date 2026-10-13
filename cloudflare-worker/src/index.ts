@@ -100,16 +100,16 @@ export default {
       const send = async (text: string) => fetch(`https://api.telegram.org/bot${connection.botToken}/sendMessage`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: chatId, text }) });
       const allAgents = Array.isArray(config.agents) ? config.agents : [];
       const activeAgents = allAgents.filter((item: any) => !item?.status || item.status === 'activo');
-      const normalizeCommand = (value: string) => value.normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
+      const normalizeCommand = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
       const stateKey = `telegram:selected-agent:${String(connection.botToken).slice(-10)}:${String(chatId)}`;
-      const commandMatch = message.match(/^\\$(\\S+)(?:\\s+([\\s\\S]*))?$/);
+      const commandMatch = message.match(/^\$(\S+)(?:\s+([\s\S]*))?$/);
       let selectedAgentId = '';
       let routedMessage = message;
       if (commandMatch) {
         const command = normalizeCommand(commandMatch[1]);
         const argument = (commandMatch[2] || '').trim();
         if (command === 'agente' || command === 'agent') {
-          const subcommand = normalizeCommand(argument.split(/\\s+/)[0] || '');
+          const subcommand = normalizeCommand(argument.split(/\s+/)[0] || '');
           if (!argument || subcommand === 'list' || subcommand === 'lista') {
             const lines = activeAgents.map((item: any, index: number) => {
               const label = String(item.name || item.nombre || item.id || 'Agente');
