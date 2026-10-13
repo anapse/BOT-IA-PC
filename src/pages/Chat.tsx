@@ -81,7 +81,18 @@ export const ChatPage = () => {
     finally { setCatalogLoading(false); }
   };
 
-  useEffect(() => { if (selectedProviderId && providers.some(provider => provider.id === selectedProviderId)) void refreshProviderModels(selectedProviderId); }, [selectedProviderId, providers]);
+  useEffect(() => {
+    // El catálogo solo es necesario al hablar directamente con un modelo.
+    // No consultarlo en modo Agente evita errores de configuración al abrir el chat.
+    if (targetMode !== 'model') {
+      setCatalogModels([]);
+      setCatalogLoading(false);
+      return;
+    }
+    if (selectedProviderId && providers.some(provider => provider.id === selectedProviderId)) {
+      void refreshProviderModels(selectedProviderId);
+    }
+  }, [targetMode, selectedProviderId, providers]);
 
   useEffect(() => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations)); } catch { /* storage unavailable */ } }, [conversations]);
   const activeConversation = conversations.find(item => item.id === activeConversationId) || null;
