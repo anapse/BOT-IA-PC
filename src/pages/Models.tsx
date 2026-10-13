@@ -67,19 +67,28 @@ export const ModelsPage = () => {
   const syncModelAndReport = async (modelIdToUpdate: string) => {
     try {
       const syncedAt = await syncCurrentConfig();
-      await updateData('modelConfigs', modelIdToUpdate, {
+      const allModels = await getCollectionDataStrict('modelConfigs');
+      await Promise.all(allModels.map((item: any) => updateData('modelConfigs', item.id, {
         workerSyncStatus: 'synced',
         workerSyncedAt: syncedAt,
         workerSyncError: '',
-      });
+      })));
       return true;
     } catch (err: any) {
       const message = err?.message || 'No se pudo sincronizar con el Worker.';
       try {
-        await updateData('modelConfigs', modelIdToUpdate, {
+        const allModels = await getCollectionDataStrict('modelConfigs');
+        await Promise.all(allModels.map((item: any) => updateData('modelConfigs', item.id, {
           workerSyncStatus: 'error',
           workerSyncError: message,
-        });
+        })));
+        const targetExists = allModels.some((item: any) => item.id === modelIdToUpdate);
+        if (!targetExists) {
+          await updateData('modelConfigs', modelIdToUpdate, {
+            workerSyncStatus: 'error',
+            workerSyncError: message,
+          });
+        }
       } catch {
         // Keep the original synchronization failure visible in the form.
       }
