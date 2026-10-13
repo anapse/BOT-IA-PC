@@ -462,7 +462,17 @@ export default {
           requestHost = parsedUrl.hostname;
           aiResponse = await fetch(requestUrl, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...(systemInstruction ? { systemInstruction: { parts: [{ text: systemInstruction }] } } : {}), contents: [...history, { role: 'user', content: message }].map((item: any) => ({ role: item.role === 'assistant' ? 'model' : 'user', parts: [{ text: item.content }] })), generationConfig: { temperature: 0.7, maxOutputTokens: 2048 } }),
+            body: JSON.stringify({ ...(systemInstruction ? { systemInstruction: { parts: [{ text: systemInstruction }] } } : {}), contents: [...history, { role: 'user', content: message }].map((item: any) => ({ role: item.role === 'assistant' ? 'model' : 'user', parts: [{ text: item.content }] })), generationConfig: {
+                  temperature: 0.7,
+                  maxOutputTokens: 2048,
+                  ...(/(?:tts|text-to-speech)/i.test(modelId)
+                    ? { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } } }
+                    : /(?:imagen|image|nano-banana)/i.test(modelId)
+                      ? { responseModalities: ['TEXT', 'IMAGE'] }
+                      : /(?:omni|audio)/i.test(modelId)
+                        ? { responseModalities: ['TEXT', 'AUDIO'] }
+                        : {}),
+                } }),
             signal: AbortSignal.timeout(30000),
           });
         } else {
