@@ -246,7 +246,7 @@ ${agents.map(agent => `• $${aliasFor(agent)} — ${agent.name}`).join('\\n')}`
       id: makeId(), role: 'user',
       content: rawText || (outgoingAttachments.length ? 'Archivo adjunto' : ''),
       createdAt: now,
-      attachments: outgoingAttachments.map(item => ({ name: item.name, mimeType: item.mimeType, size: Math.floor(item.data.length * 3 / 4) })),
+      attachments: outgoingAttachments.map(item => ({ ...item, size: Math.floor(item.data.length * 3 / 4) })),
     };
     let conversation = activeConversation;
     if (!conversation || mode !== (conversation.targetMode || 'agent') || targetId !== (conversation.targetId || conversation.agentId)) {
@@ -256,6 +256,12 @@ ${agents.map(agent => `• $${aliasFor(agent)} — ${agent.name}`).join('\\n')}`
     }
     const conversationId = conversation.id;
     const previousMessages = conversation.messages;
+    // Keep the most recent user attachment available for follow-up questions in this live session.
+    // If the user attaches a new file, send only the new file(s) to stay within request-size limits.
+    const lastAttachmentMessage = [...previousMessages].reverse().find(item => item.role === 'user' && item.attachments?.some(file => Boolean(file.data)));
+    const requestAttachments: ChatFileAttachment[] = outgoingAttachments.length
+      ? outgoingAttachments
+      : (lastAttachmentMessage?.attachments || []).filter(file => Boolean(file.data)).map(file => ({ name: file.name, mimeType: file.mimeType, data: file.data! }));
     setConversations(current => current.map(item => item.id === conversationId ? { ...item, messages: [...item.messages, userMessage], updatedAt: now } : item));
     try {
       if (localReply) {
@@ -280,7 +286,7 @@ ${agents.map(agent => `• $${aliasFor(agent)} — ${agent.name}`).join('\\n')}`
           mode,
           mode === 'model' ? temporaryModel : undefined,
           mode === 'model' ? providerIdForRequest : undefined,
-          outgoingAttachments
+          requestAttachments
         );
         const reply: ChatMessage = {
           id: makeId(), role: 'assistant', content: result.reply, createdAt: new Date().toISOString(), model: result.model,
