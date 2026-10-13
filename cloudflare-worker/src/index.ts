@@ -76,7 +76,7 @@ export default {
       try {
         const upstream = await fetch(endpoint, { headers });
         const payload: any = await upstream.json().catch(() => ({}));
-        if (!upstream.ok) { const detail = typeof payload?.error?.message === 'string' ? payload.error.message : (typeof payload?.message === 'string' ? payload.message : 'El proveedor rechazó la clave.'); return json({ error: 'Catálogo (HTTP ' + upstream.status + '): ' + detail.slice(0, 250) }, upstream.status === 401 || upstream.status === 403 ? 400 : 502); }
+        if (!upstream.ok) { const detail = typeof payload?.error?.message === 'string' ? payload.error.message : (typeof payload?.detail === 'string' ? payload.detail : (typeof payload?.message === 'string' ? payload.message : (typeof payload?.title === 'string' ? payload.title : 'El proveedor rechazó la clave.'))); const hint = upstream.status === 401 ? ' Verifica que sea una API Key nvapi- creada en build.nvidia.com y que no tenga espacios.' : upstream.status === 403 ? ' La cuenta puede no tener permiso para usar este endpoint.' : ''; return json({ error: 'Catálogo (HTTP ' + upstream.status + '): ' + detail.slice(0, 250) + hint }, upstream.status === 401 || upstream.status === 403 ? 400 : 502); }
         const source = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload?.models) ? payload.models : [];
         const models = source.map((item: any) => { const id = String(item?.id || item?.name || '').replace(/^models\//, ''); const name = String(item?.name || item?.displayName || id).replace(/^models\//, ''); return id ? { id, name, contextLength: item?.context_length || item?.inputTokenLimit || null } : null; }).filter(Boolean).sort((a: any, b: any) => a.name.localeCompare(b.name));
         return json({ models, count: models.length });
@@ -246,8 +246,9 @@ export default {
         } catch { return json({ error: 'No se pudo conectar con el proveedor de IA.' }, 502); }
         const result: any = await upstream.json().catch(() => ({}));
         if (!upstream.ok) {
-          const apiMessage = typeof result?.error?.message === 'string' ? result.error.message : (typeof result?.message === 'string' ? result.message : 'El proveedor rechazó la solicitud.');
-          return json({ error: `${isOpenRouter ? 'OpenRouter' : isNvidia ? 'NVIDIA NIM' : 'Gemini'} (HTTP ${upstream.status}): ${apiMessage.slice(0, 350)}` }, upstream.status === 429 ? 429 : 502);
+          const apiMessage = typeof result?.error?.message === 'string' ? result.error.message : (typeof result?.detail === 'string' ? result.detail : (typeof result?.message === 'string' ? result.message : (typeof result?.title === 'string' ? result.title : 'El proveedor rechazó la solicitud.')));
+          const authHint = isNvidia && upstream.status === 401 ? ' Comprueba que la clave sea nvapi- de build.nvidia.com, esté completa y sin espacios.' : isNvidia && upstream.status === 403 ? ' NVIDIA puede no tener habilitado el acceso a inferencia para tu cuenta.' : '';
+          return json({ error: `${isOpenRouter ? 'OpenRouter' : isNvidia ? 'NVIDIA NIM' : 'Gemini'} (HTTP ${upstream.status}): ${apiMessage.slice(0, 300)}${authHint}` }, upstream.status === 429 ? 429 : 502);
         }
         const reply = (isNvidia || isOpenRouter)
           ? (typeof result?.choices?.[0]?.message?.content === 'string' ? result.choices[0].message.content.trim() : '')
