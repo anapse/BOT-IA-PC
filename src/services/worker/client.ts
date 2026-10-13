@@ -75,6 +75,18 @@ export const readWorkerConfig = async (workerUrl: string) => {
 
 export type TemporaryModelRequest = { provider: string; modelId: string; apiKey: string };
 
+export const fetchProviderCatalog = async (workerUrl: string, providerId: string) => {
+  const token = await getAdminToken();
+  const response = await fetch(workerUrl.replace(/\/$/, '') + '/providers/catalog', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+    body: JSON.stringify({ providerId }),
+  });
+  const result = await response.json().catch(() => ({} as any));
+  if (!response.ok) throw new Error(typeof result?.error === 'string' ? result.error : 'No se pudo consultar el catálogo del proveedor.');
+  return Array.isArray(result?.models) ? result.models : [];
+};
+
 export const sendAgentChatMessage = async (workerUrl: string, targetId: string, message: string, history: Array<{ role: 'user' | 'assistant'; content: string }> = [], mode: 'agent' | 'model' = 'agent', temporaryModel?: TemporaryModelRequest, providerId?: string): Promise<{ reply: string; model: string }> => {
   const token = await getAdminToken();
   const baseUrl = workerUrl.replace(/\/$/, '');
