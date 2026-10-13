@@ -95,10 +95,60 @@ export default {
       if (!connection || connection.status !== 'activo' || !connection.botToken) return json({ error: 'Bot no encontrado o inactivo' }, 404);
       const incoming = update?.message;
       const chatId = incoming?.chat?.id;
-      const message = typeof incoming?.text === 'string' ? incoming.text.trim() : '';
+      let message = typeof incoming?.text === 'string' ? incoming.text.trim() : '';
       if (!chatId || !message) return json({ status: 'ignored' });
       const send = async (text: string) => fetch(`https://api.telegram.org/bot${connection.botToken}/sendMessage`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: chatId, text }) });
-      const agent = Array.isArray(config.agents) ? config.agents.find((item: any) => item?.id === connection.agentId) : null;
+      const allAgents = Array.isArray(config.agents) ? config.agents : [];
+      const activeAgents = allAgents.filter((item: any) => !item?.status || item.status === 'activo');
+      const normalizeCommand = (value: string) => value.normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
+      const stateKey = `telegram:selected-agent:${String(connection.botToken).slice(-10)}:${String(chatId)}`;
+      const commandMatch = message.match(/^\\$(\\S+)(?:\\s+([\\s\\S]*))?$/);
+      let selectedAgentId = '';
+      let routedMessage = message;
+      if (commandMatch) {
+        const command = normalizeCommand(commandMatch[1]);
+        const argument = (commandMatch[2] || '').trim();
+        if (command === 'agente' || command === 'agent') {
+          const subcommand = normalizeCommand(argument.split(/\\s+/)[0] || '');
+          if (!argument || subcommand === 'list' || subcommand === 'lista') {
+            const lines = activeAgents.map((item: any, index: number) => {
+              const label = String(item.name || item.nombre || item.id || 'Agente');
+              const alias = normalizeCommand(label) || normalizeCommand(String(item.id || ''));
+              const description = String(item.description || '').trim();
+              return `${index + 1}. ${label} — ${alias}${description ? `\\n   ${description.slice(0, 120)}` : ''}`;
+            });
+            await send(lines.length ? `🤖 Agentes disponibles:\\n\\n${lines.join('\\n')}\\n\\nUsa ${'agente'} nombre para seleccionarlo o ${'nombre'} tu mensaje para consultarlo directamente.` : 'No hay agentes activos. Activa o crea uno desde BOT IA PC.');
+            return json({ status: 'agent_list' });
+          }
+          const requested = normalizeCommand(argument);
+          const found = activeAgents.find((item: any) => normalizeCommand(String(item.name || item.nombre || '')) === requested || normalizeCommand(String(item.id || '')) === requested);
+          if (!found) {
+            await send(`No encontré el agente "${argument}". Escribe $agente list para ver los nombres disponibles.`);
+            return json({ status: 'agent_not_found' });
+          }
+          await env.WORKER_KV.put(stateKey, String(found.id));
+          await send(`✅ Agente seleccionado: ${found.name || found.id}.\\nAhora puedes escribirme normalmente o usar ${normalizeCommand(String(found.name || found.id))} mensaje para llamarlo directamente.`);
+          return json({ status: 'agent_selected', agentId: found.id });
+        }
+        const directAgent = activeAgents.find((item: any) => normalizeCommand(String(item.name || item.nombre || '')) === command || normalizeCommand(String(item.id || '')) === command);
+        if (directAgent) {
+          selectedAgentId = String(directAgent.id);
+          routedMessage = argument;
+          await env.WORKER_KV.put(stateKey, selectedAgentId);
+          if (!routedMessage) {
+            await send(`✅ Agente seleccionado: ${directAgent.name || directAgent.id}. Envíale ahora tu mensaje.`);
+            return json({ status: 'agent_selected', agentId: selectedAgentId });
+          }
+        } else {
+          await send(`Comando no reconocido: ${commandMatch[1]}. Escribe $agente list para ver los agentes.`);
+          return json({ status: 'unknown_command' });
+        }
+      } else {
+        selectedAgentId = String(await env.WORKER_KV.get(stateKey) || '');
+      }
+      if (!selectedAgentId) selectedAgentId = String(connection.agentId || '');
+      message = routedMessage;
+      const agent = allAgents.find((item: any) => item?.id === selectedAgentId) || null;
       if (!agent || (agent.status && agent.status !== 'activo')) {
         await send(!agent ? 'Este bot no tiene un agente válido asignado. Revisa BOT IA PC.' : 'El agente asignado está pausado o inactivo.');
         return json({ status: 'agent_unavailable' });
