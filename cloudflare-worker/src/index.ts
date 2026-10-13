@@ -140,6 +140,19 @@ export default {
       }
     }
 
+    if (url.pathname === '/providers/sync' && request.method === 'POST') {
+      const token = (request.headers.get('Authorization') || '').replace(/^Bearer\\s+/i, '');
+      const validation = await validateToken(token, env.FIREBASE_PROJECT_ID || '', String(env.ADMIN_EMAILS || '').split(',').map((email: string) => email.trim()).filter(Boolean));
+      if (!validation.authorized) return json({ error: 'No autorizado para sincronizar proveedores.' }, 403);
+      let input: any;
+      try { input = await request.json(); } catch { return json({ error: 'El cuerpo debe ser JSON válido.' }, 400); }
+      if (!Array.isArray(input?.providers)) return json({ error: 'La lista de proveedores guardados no es válida.' }, 400);
+      const storage = getStorage(env);
+      const currentConfig = await storage.getConfig();
+      await storage.saveConfig({ ...currentConfig, providers: input.providers });
+      return json({ status: 'synced', providers: input.providers.length });
+    }
+
     if (url.pathname === '/providers/catalog' && request.method === 'POST') {
       const token = (request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
       const validation = await validateToken(token, env.FIREBASE_PROJECT_ID || '', String(env.ADMIN_EMAILS || '').split(',').map((email: string) => email.trim()).filter(Boolean));
