@@ -108,7 +108,7 @@ export const ChatPage = () => {
   useEffect(() => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations)); } catch { /* storage unavailable */ } }, [conversations]);
   const activeConversation = conversations.find(item => item.id === activeConversationId) || null;
   const effectiveMode: 'agent' | 'model' = activeConversation?.targetMode || targetMode;
-  const effectiveTargetId = activeConversation?.targetId || activeConversation?.agentId || selectedAgentId;
+  const effectiveTargetId = activeConversation ? (activeConversation.targetId || activeConversation.agentId) : (targetMode === 'agent' ? selectedAgentId : selectedModelId);
   const selectedAgent = agents.find(agent => agent.id === (effectiveMode === 'agent' ? effectiveTargetId : selectedAgentId)) || null;
   const selectedModel = models.find(model => model.id === (effectiveMode === 'model' ? effectiveTargetId : selectedModelId)) || null;
   const selectedCatalogModel = catalogModels.find(model => model.id === (effectiveMode === 'model' ? effectiveTargetId : selectedModelId)) || null;
