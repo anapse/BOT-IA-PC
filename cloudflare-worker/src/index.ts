@@ -209,7 +209,7 @@ export default {
         await send('El modelo asignado no está listo. Comprueba que sea Gemini, NVIDIA NIM u OpenRouter, esté activo y tenga API Key.');
         return json({ status: 'model_unavailable' });
       }
-      const configuredModelId = String(model.modelId || (mode === 'agent' ? agent?.model : '') || '').trim();
+      const configuredModelId = String(model.modelId || agent.model || '').trim();
       const modelId = isGemini ? configuredModelId.replace(/^models\//i, '') : configuredModelId;
       if (isGemini && !/^gemini-[a-zA-Z0-9._-]+$/i.test(modelId)) {
         await send(`ID de modelo Gemini no válido: ${configuredModelId}`);
@@ -322,7 +322,7 @@ export default {
         const isGemini = provider.includes('gemini') || provider.includes('google');
         if (!isNvidia && !isOpenRouter && !isGemini) return json({ error: 'Este Worker admite Google Gemini, NVIDIA NIM y OpenRouter por ahora.' }, 400);
         if (!model.apiKey) return json({ error: 'El modelo no tiene API Key guardada. Edítalo y guarda la clave antes de sincronizar.' }, 400);
-        const configuredModelId = String(model.modelId || agent.model || '').trim();
+        const configuredModelId = String(model.modelId || (mode === 'agent' ? agent?.model : '') || '').trim();
         const modelId = isGemini ? configuredModelId.replace(/^models\//i, '') : configuredModelId;
         if (isGemini && !/^gemini-[a-zA-Z0-9._-]+$/i.test(modelId)) {
           return json({ error: `El ID de modelo Gemini no es válido: "${configuredModelId}". Usa el ID técnico, por ejemplo gemini-3.5-flash-lite, sin URL ni texto adicional.` }, 400);
