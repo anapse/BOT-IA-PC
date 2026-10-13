@@ -326,7 +326,7 @@ export default {
       let aiResponse: Response;
       try {
         if (isAnthropic) {
-          const base = endpoint || 'https://api.anthropic.com/v1';
+          const base = (endpoint || 'https://api.anthropic.com/v1').replace(/\\/+$/, '');
           const requestUrl = base.endsWith('/messages') ? base : base + '/messages';
           aiResponse = await fetch(requestUrl, {
             method: 'POST',
