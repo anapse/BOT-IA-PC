@@ -2,9 +2,9 @@ import { useState, useEffect } from 'react';
 import { ActionButton } from '../components/ActionButton';
 import { Card } from '../components/Card';
 import { InputField } from '../components/InputField';
-import { subscribeCollection, addData, updateData, deleteData, getDocData } from '../services/firebase/db';
+import { subscribeCollection, addData, updateData, deleteData, getDocData, getCollectionDataStrict } from '../services/firebase/db';
 import { Bot, Plus, Trash2, Edit2, Play, Pause, Search, Send, MessageCircle } from 'lucide-react';
-import { sendAgentChatMessage, fetchProviderCatalog } from '../services/worker/client';
+import { sendAgentChatMessage, fetchProviderCatalog, syncWorkerConfig } from '../services/worker/client';
 
 interface ModelConfig {
   id: string;
@@ -157,6 +157,17 @@ export const AgentsPage = () => {
           status,
           createdAt: new Date().toISOString(),
         });
+      }
+      try {
+        const saved = await getDocData('appSettings', 'workerConfig');
+        const workerUrl = String(saved?.value || 'https://bot-ia-pc.elherreroanapse.workers.dev').replace(/\/$/, '');
+        const [currentAgents, currentModels, currentProviders, connections] = await Promise.all([
+          getCollectionDataStrict('agents'), getCollectionDataStrict('modelConfigs'),
+          getCollectionDataStrict('providers'), getCollectionDataStrict('telegramConnections')
+        ]);
+        await syncWorkerConfig(workerUrl, { agents: currentAgents, models: currentModels, providers: currentProviders, connections, syncedAt: new Date().toISOString() });
+      } catch (syncError: any) {
+        setErrorMsg('El agente se guardó, pero falta sincronizar el Worker: ' + (syncError?.message || 'error desconocido'));
       }
       setIsModalOpen(false);
     } catch (err: any) {
