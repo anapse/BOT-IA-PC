@@ -4,7 +4,7 @@ import { Card } from '../components/Card';
 import { InputField } from '../components/InputField';
 import { subscribeCollection, addData, updateData, deleteData, getDocData } from '../services/firebase/db';
 import { Bot, Plus, Trash2, Edit2, Play, Pause, Search, Send, MessageCircle } from 'lucide-react';
-import { sendAgentChatMessage } from '../services/worker/client';
+import { sendAgentChatMessage, fetchProviderCatalog } from '../services/worker/client';
 
 interface ModelConfig {
   id: string;
