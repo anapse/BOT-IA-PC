@@ -339,15 +339,23 @@ export default {
             continue;
           }
           try {
+            const botApiBase = `https://api.telegram.org/bot${String(connection.botToken).trim()}`;
+            const identityResponse = await fetch(`${botApiBase}/getMe`);
+            const identityResult: any = await identityResponse.json().catch(() => ({}));
+            if (!identityResponse.ok || !identityResult?.ok) {
+              const reason = identityResult?.description || `Telegram respondió HTTP ${identityResponse.status}`;
+              telegramWebhooks.push({ id: connection.id, name: connection.name || 'Bot sin nombre', status: 'error', description: `Token rechazado por Telegram: ${reason}. Comprueba que hayas copiado el token completo desde @BotFather, sin espacios ni el prefijo adicional «bot».` });
+              continue;
+            }
             const webhookUrl = `${url.origin}/webhook/telegram/${encodeURIComponent(connection.id)}`;
-            const telegramResponse = await fetch(`https://api.telegram.org/bot${connection.botToken}/setWebhook`, {
+            const telegramResponse = await fetch(`${botApiBase}/setWebhook`, {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ url: webhookUrl, allowed_updates: ['message'] }),
             });
             const telegramResult: any = await telegramResponse.json().catch(() => ({}));
-            telegramWebhooks.push({ id: connection.id, status: telegramResponse.ok && telegramResult?.ok ? 'registered' : 'error', description: telegramResult?.description });
+            telegramWebhooks.push({ id: connection.id, name: connection.name || identityResult.result?.username || 'Bot sin nombre', username: identityResult.result?.username, status: telegramResponse.ok && telegramResult?.ok ? 'registered' : 'error', description: telegramResponse.ok && telegramResult?.ok ? 'Webhook registrado correctamente.' : (telegramResult?.description || `Telegram respondió HTTP ${telegramResponse.status}`) });
           } catch {
-            telegramWebhooks.push({ id: connection.id, status: 'error', description: 'No se pudo contactar con Telegram.' });
+            telegramWebhooks.push({ id: connection.id, name: connection.name || 'Bot sin nombre', status: 'error', description: 'No se pudo contactar con la API de Telegram. Comprueba la conexión e inténtalo de nuevo.' });
           }
         }
       }
