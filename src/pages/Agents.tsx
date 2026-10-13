@@ -116,13 +116,7 @@ export const AgentsPage = () => {
     try {
       const saved = await getDocData('appSettings', 'workerConfig');
       const workerUrl = String(saved?.value || 'https://bot-ia-pc.elherreroanapse.workers.dev').replace(/\/$/, '');
-      const response = await fetch(workerUrl + '/models/catalog', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider: provider.type, endpoint: provider.endpoint, apiKey: provider.apiKey })
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'No se pudo cargar el catálogo.');
-      const list = Array.isArray(result.models) ? result.models as CatalogModel[] : [];
+      const list = await fetchProviderCatalog(workerUrl, provider.id) as CatalogModel[];
       setCatalogModels(list);
       if (!list.some(item => item.id === model) && list[0]) setModel(list[0].id);
       if (!list.length) setErrorMsg('El proveedor respondió, pero no devolvió modelos disponibles.');
