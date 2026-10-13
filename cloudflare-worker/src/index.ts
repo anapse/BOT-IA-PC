@@ -140,6 +140,41 @@ export default {
       }
     }
 
+    if (url.pathname === '/providers/catalog' && request.method === 'POST') {
+      const token = (request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
+      const validation = await validateToken(token, env.FIREBASE_PROJECT_ID || '', String(env.ADMIN_EMAILS || '').split(',').map((email: string) => email.trim()).filter(Boolean));
+      if (!validation.authorized) return json({ error: 'No autorizado para consultar proveedores.' }, 403);
+      let input: any;
+      try { input = await request.json(); } catch { return json({ error: 'El cuerpo debe ser JSON válido.' }, 400); }
+      const providerId = typeof input?.providerId === 'string' ? input.providerId : '';
+      const config = await getStorage(env).getConfig();
+      const provider = Array.isArray(config.providers) ? config.providers.find((item: any) => item?.id === providerId && item?.status === 'activo') : null;
+      if (!provider) return json({ error: 'Proveedor activo no encontrado en la configuración sincronizada.' }, 404);
+      const apiKey = typeof provider.apiKey === 'string' ? provider.apiKey.trim() : '';
+      const type = String(provider.type || '').toLowerCase();
+      const base = String(provider.endpoint || '').replace(/\/+$/, '');
+      if (!apiKey || !base) return json({ error: 'El proveedor necesita API key y endpoint.' }, 400);
+      let endpoint = base + '/models';
+      let headers: Record<string, string> = { Authorization: 'Bearer ' + apiKey };
+      if (type === 'google' || type === 'gemini') { endpoint = base + '/models?key=' + encodeURIComponent(apiKey); headers = {}; }
+      if (type === 'anthropic') headers = { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' };
+      try {
+        const upstream = await fetch(endpoint, { headers, signal: AbortSignal.timeout(12000) });
+        const payload: any = await upstream.json().catch(() => ({}));
+        if (!upstream.ok) {
+          const detail = typeof payload?.error?.message === 'string' ? payload.error.message : typeof payload?.message === 'string' ? payload.message : 'El proveedor rechazó la consulta.';
+          return json({ error: 'Catálogo (HTTP ' + upstream.status + '): ' + detail.slice(0, 220) }, 400);
+        }
+        const source = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload?.models) ? payload.models : [];
+        const models = source.map((item: any) => {
+          const id = String(item?.id || item?.name || '').replace(/^models\//, '');
+          const name = String(item?.displayName || item?.name || item?.id || id).replace(/^models\//, '');
+          return id ? { id, name, contextLength: item?.context_length || item?.inputTokenLimit || null } : null;
+        }).filter(Boolean).sort((a: any, b: any) => a.name.localeCompare(b.name));
+        return json({ models, count: models.length });
+      } catch { return json({ error: 'No se pudo consultar el catálogo del proveedor.' }, 502); }
+    }
+
     if (url.pathname === '/status' && request.method === 'GET') {
       return json({ status: 'ok', version: '1.0.0' });
     }
