@@ -64,15 +64,32 @@ export default {
     if (url.pathname === '/models/catalog' && request.method === 'POST') {
       let input: any;
       try { input = await request.json(); } catch { return json({ error: 'El cuerpo debe ser JSON válido.' }, 400); }
-      const provider = String(input?.provider || '').toLowerCase();
+      const provider = String(input?.provider || input?.type || '').toLowerCase();
       const apiKey = typeof input?.apiKey === 'string' ? input.apiKey.trim() : '';
       if (!apiKey) return json({ error: 'Introduce primero la API Key.' }, 400);
-      let endpoint = '';
+      let base = typeof input?.endpoint === 'string' ? input.endpoint.trim().replace(/\/+$/, '') : '';
+      const defaults: Record<string, string> = {
+        openai: 'https://api.openai.com/v1',
+        anthropic: 'https://api.anthropic.com/v1',
+        google: 'https://generativelanguage.googleapis.com/v1beta',
+        gemini: 'https://generativelanguage.googleapis.com/v1beta',
+        openrouter: 'https://openrouter.ai/api/v1',
+        nvidia: 'https://integrate.api.nvidia.com/v1',
+      };
+      if (!base) base = defaults[provider] || '';
+      if (!base) return json({ error: 'Configura un endpoint base HTTPS para este proveedor.' }, 400);
+      let parsedEndpoint: URL;
+      try { parsedEndpoint = new URL(base); } catch { return json({ error: 'Endpoint no válido.' }, 400); }
+      if (parsedEndpoint.protocol !== 'https:' || parsedEndpoint.username || parsedEndpoint.password || parsedEndpoint.hostname === 'localhost' || parsedEndpoint.hostname === '127.0.0.1') {
+        return json({ error: 'El endpoint debe usar HTTPS y no puede incluir credenciales ni localhost.' }, 400);
+      }
+      let endpoint = base + '/models';
       let headers: Record<string, string> = { Authorization: 'Bearer ' + apiKey };
-      if (provider.includes('openrouter')) endpoint = 'https://openrouter.ai/api/v1/models';
-      else if (provider.includes('nvidia')) endpoint = 'https://integrate.api.nvidia.com/v1/models';
-      else if (provider.includes('gemini') || provider.includes('google')) { endpoint = 'https://generativelanguage.googleapis.com/v1beta/models?key=' + encodeURIComponent(apiKey); headers = {}; }
-      else return json({ error: 'Catálogo automático disponible para OpenRouter, NVIDIA NIM y Google Gemini.' }, 400);
+      if (provider.includes('google') || provider.includes('gemini')) {
+        endpoint = base + '/models?key=' + encodeURIComponent(apiKey); headers = {};
+      } else if (provider.includes('anthropic')) {
+        headers = { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' };
+      }
       try {
         const upstream = await fetch(endpoint, { headers });
         const payload: any = await upstream.json().catch(() => ({}));
