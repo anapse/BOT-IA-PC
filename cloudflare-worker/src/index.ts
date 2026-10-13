@@ -293,17 +293,29 @@ export default {
         return json({ status: 'agent_unavailable' });
       }
       const models = Array.isArray(config.models) ? config.models : [];
-      const model = models.find((item: any) => item?.status === 'activo' && (item?.modelId === agent.model || item?.id === agent.model || item?.name === agent.model));
-      const provider = String(model?.provider || '').toLowerCase();
-      const isNvidia = provider.includes('nvidia');
-      const isOpenRouter = provider.includes('openrouter');
-      const isGemini = provider.includes('gemini') || provider.includes('google');
-      if (!model || model.connectionType === 'local' || (!isGemini && !isNvidia && !isOpenRouter) || !model.apiKey) {
-        await send('El modelo asignado no está listo. Comprueba que sea Gemini, NVIDIA NIM u OpenRouter, esté activo y tenga API Key.');
+      const providers = Array.isArray(config.providers) ? config.providers : [];
+      const configuredProviderId = String(agent.providerId || '');
+      const configuredProvider = configuredProviderId
+        ? providers.find((item: any) => item?.id === configuredProviderId && item?.status === 'activo')
+        : null;
+      const legacyModel = models.find((item: any) => item?.status === 'activo' && (item?.modelId === agent.model || item?.id === agent.model || item?.name === agent.model));
+      const model: any = configuredProvider || legacyModel;
+      const provider = String(configuredProvider?.type || legacyModel?.provider || '').toLowerCase();
+      const apiKey = String(configuredProvider?.apiKey || legacyModel?.apiKey || '').trim();
+      const endpoint = String(configuredProvider?.endpoint || legacyModel?.endpoint || '').trim().replace(/\\/+$/, '');
+      const configuredModelId = String(agent.modelId || agent.model || legacyModel?.modelId || '').trim();
+      const isGemini = provider.includes('gemini') || provider === 'google' || provider.includes('google');
+      const isAnthropic = provider.includes('anthropic') || provider === 'claude';
+      const isOpenAICompatible = provider === 'openai' || provider === 'openai-compatible' || provider.includes('openrouter') || provider.includes('nvidia') || provider.includes('deepseek') || provider.includes('groq') || provider.includes('together') || provider.includes('mistral') || provider.includes('xai');
+      if (!model || model.status === 'inactivo' || model.status === 'pausado' || !apiKey || (!isGemini && !isAnthropic && !isOpenAICompatible)) {
+        await send('El proveedor o modelo asignado no está listo. Comprueba que el proveedor esté activo, tenga API key y que el agente tenga un modelo compatible asignado.');
         return json({ status: 'model_unavailable' });
       }
-      const configuredModelId = String(model.modelId || agent.model || '').trim();
-      const modelId = isGemini ? configuredModelId.replace(/^models\//i, '') : configuredModelId;
+      const modelId = isGemini ? configuredModelId.replace(/^models\\//i, '') : configuredModelId;
+      if (!modelId) {
+        await send('El agente no tiene un ID de modelo asignado. Abre BOT IA PC y guarda el modelo del agente.');
+        return json({ status: 'invalid_model' });
+      }
       if (isGemini && !/^gemini-[a-zA-Z0-9._-]+$/i.test(modelId)) {
         await send(`ID de modelo Gemini no válido: ${configuredModelId}`);
         return json({ status: 'invalid_model' });
@@ -313,24 +325,44 @@ export default {
       const systemInstruction = [identityInstruction, agent.systemPrompt || '', agent.personality ? `Personalidad: ${agent.personality}` : '', agent.description ? `Descripción: ${agent.description}` : ''].filter(Boolean).join('\\n\\n');
       let aiResponse: Response;
       try {
-        if (isNvidia || isOpenRouter) {
-          const defaultEndpoint = isOpenRouter ? 'https://openrouter.ai/api/v1/chat/completions' : 'https://integrate.api.nvidia.com/v1/chat/completions';
-          aiResponse = await fetch(model.endpoint?.trim() || defaultEndpoint, {
+        if (isAnthropic) {
+          const base = endpoint || 'https://api.anthropic.com/v1';
+          const requestUrl = base.endsWith('/messages') ? base : base + '/messages';
+          aiResponse = await fetch(requestUrl, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${model.apiKey}`, ...(isOpenRouter ? { 'HTTP-Referer': 'https://anapse.github.io/BOT-IA-PC/', 'X-OpenRouter-Title': 'BOT IA PC' } : {}) },
-            body: JSON.stringify({ model: modelId, messages: [...(systemInstruction ? [{ role: 'system', content: systemInstruction }] : []), ...history, { role: 'user', content: message }], temperature: 0.7, max_tokens: 2048, stream: false }),
+            headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+            body: JSON.stringify({ model: modelId, max_tokens: 2048, temperature: 0.7, ...(systemInstruction ? { system: systemInstruction } : {}), messages: [...history, { role: 'user', content: message }].map((item: any) => ({ role: item.role === 'assistant' ? 'assistant' : 'user', content: item.content })) }),
           });
-        } else {
-          aiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelId)}:generateContent?key=${encodeURIComponent(model.apiKey)}`, {
+        } else if (isGemini) {
+          const base = endpoint || 'https://generativelanguage.googleapis.com/v1beta';
+          aiResponse = await fetch(`${base}/models/${encodeURIComponent(modelId)}:generateContent?key=${encodeURIComponent(apiKey)}`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ ...(systemInstruction ? { systemInstruction: { parts: [{ text: systemInstruction }] } } : {}), contents: [...history, { role: 'user', content: message }].map((item: any) => ({ role: item.role === 'assistant' ? 'model' : 'user', parts: [{ text: item.content }] })), generationConfig: { temperature: 0.7, maxOutputTokens: 2048 } }),
+          });
+        } else {
+          const defaultBase = provider.includes('openrouter') ? 'https://openrouter.ai/api/v1'
+            : provider.includes('nvidia') ? 'https://integrate.api.nvidia.com/v1'
+            : provider.includes('deepseek') ? 'https://api.deepseek.com'
+            : provider.includes('groq') ? 'https://api.groq.com/openai/v1'
+            : provider.includes('together') ? 'https://api.together.xyz/v1'
+            : provider.includes('mistral') ? 'https://api.mistral.ai/v1'
+            : provider.includes('xai') ? 'https://api.x.ai/v1'
+            : 'https://api.openai.com/v1';
+          const base = endpoint || defaultBase;
+          const requestUrl = base.endsWith('/chat/completions') ? base : base + '/chat/completions';
+          aiResponse = await fetch(requestUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}`, ...(provider.includes('openrouter') ? { 'HTTP-Referer': 'https://anapse.github.io/BOT-IA-PC/', 'X-OpenRouter-Title': 'BOT IA PC' } : {}) },
+            body: JSON.stringify({ model: modelId, messages: [...(systemInstruction ? [{ role: 'system', content: systemInstruction }] : []), ...history, { role: 'user', content: message }], temperature: 0.7, max_tokens: 2048, stream: false }),
           });
         }
       } catch { await send('No se pudo conectar con la IA. Inténtalo de nuevo.'); return json({ error: 'AI provider unavailable' }, 502); }
       const result: any = await aiResponse.json().catch(() => ({}));
-      const rawReply = (isNvidia || isOpenRouter)
-        ? (typeof result?.choices?.[0]?.message?.content === 'string' ? result.choices[0].message.content.trim() : '')
-        : (Array.isArray(result?.candidates?.[0]?.content?.parts) ? result.candidates[0].content.parts.map((part: any) => typeof part?.text === 'string' ? part.text : '').join('').trim() : '');
+      const rawReply = isAnthropic
+        ? (Array.isArray(result?.content) ? result.content.map((part: any) => typeof part?.text === 'string' ? part.text : '').join('').trim() : '')
+        : isGemini
+          ? (Array.isArray(result?.candidates?.[0]?.content?.parts) ? result.candidates[0].content.parts.map((part: any) => typeof part?.text === 'string' ? part.text : '').join('').trim() : '')
+          : (typeof result?.choices?.[0]?.message?.content === 'string' ? result.choices[0].message.content.trim() : '');
       const reply = formatTelegramText(rawReply);
       if (!aiResponse.ok || !reply) {
         await send(aiResponse.status === 429 ? 'La IA está ocupada. Inténtalo en un momento.' : 'La IA no pudo responder. Revisa el modelo configurado.');
