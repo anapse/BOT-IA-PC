@@ -311,50 +311,92 @@ export default {
         if (mode === 'agent' && !agent) return json({ error: 'El agente no aparece en la configuración sincronizada. Sincroniza desde el panel.' }, 404);
         if (mode === 'agent' && agent?.status && agent.status !== 'activo') return json({ error: 'El agente está pausado o inactivo.' }, 409);
         const models = Array.isArray(config.models) ? config.models : [];
-        const model = mode === 'model'
-          ? models.find((item: any) => item?.status === 'activo' && (item?.id === requestedModelId || item?.modelId === requestedModelId || item?.name === requestedModelId))
-          : models.find((item: any) => item?.status === 'activo' && (item?.modelId === agent?.model || item?.id === agent?.model || item?.name === agent?.model));
-        if (!model) return json({ error: mode === 'model' ? 'No se encontró ese modelo activo. Sincroniza la configuración desde el panel.' : `No se encontró un modelo activo para "${agent?.model || 'sin modelo'}". Comprueba la asignación y sincroniza otra vez.` }, 400);
-        if (model.connectionType === 'local') return json({ error: 'Los modelos locales todavía no se ejecutan desde este Worker.' }, 400);
-        const provider = String(model.provider || '').toLowerCase();
-        const isNvidia = provider.includes('nvidia');
-        const isOpenRouter = provider.includes('openrouter');
-        const isGemini = provider.includes('gemini') || provider.includes('google');
-        if (!isNvidia && !isOpenRouter && !isGemini) return json({ error: 'Este Worker admite Google Gemini, NVIDIA NIM y OpenRouter por ahora.' }, 400);
-        if (!model.apiKey) return json({ error: 'El modelo no tiene API Key guardada. Edítalo y guarda la clave antes de sincronizar.' }, 400);
-        const configuredModelId = String(model.modelId || (mode === 'agent' ? agent?.model : '') || '').trim();
-        const modelId = isGemini ? configuredModelId.replace(/^models\//i, '') : configuredModelId;
-        if (isGemini && !/^gemini-[a-zA-Z0-9._-]+$/i.test(modelId)) {
-          return json({ error: `El ID de modelo Gemini no es válido: "${configuredModelId}". Usa el ID técnico, por ejemplo gemini-3.5-flash-lite, sin URL ni texto adicional.` }, 400);
+        const temporary = mode === 'model' && input?.temporaryModel && typeof input.temporaryModel === 'object'
+          ? input.temporaryModel : null;
+        let model: any = null;
+        let provider = '';
+        let modelId = '';
+        let apiKey = '';
+        let endpoint = '';
+        let isAnthropic = false;
+        let isGemini = false;
+        let isOpenAICompatible = false;
+
+        if (temporary) {
+          provider = String(temporary.provider || '').trim().toLowerCase();
+          modelId = String(temporary.modelId || '').trim();
+          apiKey = typeof temporary.apiKey === 'string' ? temporary.apiKey.trim() : '';
+          const allowedProviders = new Set(['openai', 'anthropic', 'google', 'openrouter', 'nvidia']);
+          if (!allowedProviders.has(provider)) return json({ error: 'Proveedor temporal no admitido.' }, 400);
+          if (!modelId || modelId.length > 240 || /[\r\n]/.test(modelId)) return json({ error: 'Introduce un ID técnico de modelo válido (máximo 240 caracteres).' }, 400);
+          if (!apiKey || apiKey.length > 500) return json({ error: 'Introduce una API Key válida.' }, 400);
+          // Temporary keys are used only for this request: never write them to KV or Firebase.
+        } else {
+          model = mode === 'model'
+            ? models.find((item: any) => item?.status === 'activo' && (item?.id === requestedModelId || item?.modelId === requestedModelId || item?.name === requestedModelId))
+            : models.find((item: any) => item?.status === 'activo' && (item?.modelId === agent?.model || item?.id === agent?.model || item?.name === agent?.model));
+          if (!model) return json({ error: mode === 'model' ? 'No se encontró ese modelo activo. Sincroniza la configuración desde el panel o elige un modelo temporal.' : `No se encontró un modelo activo para "${agent?.model || 'sin modelo'}". Comprueba la asignación y sincroniza otra vez.` }, 400);
+          if (model.connectionType === 'local') return json({ error: 'Los modelos locales todavía no se ejecutan desde este Worker.' }, 400);
+          provider = String(model.provider || '').toLowerCase();
+          modelId = String(model.modelId || (mode === 'agent' ? agent?.model : '') || '').trim();
+          apiKey = typeof model.apiKey === 'string' ? model.apiKey.trim() : '';
+          endpoint = typeof model.endpoint === 'string' ? model.endpoint.trim() : '';
+          if (!apiKey) return json({ error: 'El modelo no tiene API Key guardada. Edítalo y guarda la clave antes de sincronizar.' }, 400);
         }
-        if (isNvidia && !modelId) return json({ error: 'Configura el ID del modelo NVIDIA, por ejemplo meta/llama-3.3-70b-instruct.' }, 400);
+
+        isGemini = provider.includes('gemini') || provider === 'google' || provider.includes('google');
+        isAnthropic = provider.includes('anthropic') || provider === 'claude';
+        isOpenAICompatible = provider === 'openai' || provider.includes('openrouter') || provider.includes('nvidia') || provider.includes('deepseek') || provider.includes('groq') || provider.includes('together') || provider.includes('mistral') || provider.includes('xai');
+        if (!isGemini && !isAnthropic && !isOpenAICompatible) return json({ error: 'Proveedor no compatible. Usa OpenAI, Anthropic, Google Gemini, OpenRouter o NVIDIA NIM.' }, 400);
+        if (isGemini) modelId = modelId.replace(/^models\//i, '');
+        if (!modelId) return json({ error: 'Introduce el ID técnico del modelo.' }, 400);
+        if (isGemini && !/^gemini-[a-zA-Z0-9._-]+$/i.test(modelId)) return json({ error: `El ID de modelo Gemini no es válido: "${modelId}".` }, 400);
+
         const systemInstruction = mode === 'agent' ? ['No repitas presentaciones ni saludos al principio de cada respuesta. Preséntate solo si el usuario pregunta quién eres; responde directamente a la consulta y varía la redacción de forma natural.', agent?.systemPrompt || '', agent?.personality ? `Personalidad: ${agent.personality}` : '', agent?.description ? `Descripción: ${agent.description}` : ''].filter(Boolean).join('\\n\\n') : '';
+        const safeHistory = history.map((item: any) => ({ role: item.role, content: item.content }));
         let upstream: Response;
         try {
-          if (isNvidia || isOpenRouter) {
-            const defaultEndpoint = isOpenRouter ? 'https://openrouter.ai/api/v1/chat/completions' : 'https://integrate.api.nvidia.com/v1/chat/completions';
-            upstream = await fetch(model.endpoint?.trim() || defaultEndpoint, {
+          if (isAnthropic) {
+            upstream = await fetch('https://api.anthropic.com/v1/messages', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${model.apiKey}`, ...(isOpenRouter ? { 'HTTP-Referer': 'https://anapse.github.io/BOT-IA-PC/', 'X-OpenRouter-Title': 'BOT IA PC' } : {}) },
-              body: JSON.stringify({ model: modelId, messages: [...(systemInstruction ? [{ role: 'system', content: systemInstruction }] : []), { role: 'user', content: message }], temperature: 0.7, max_tokens: 2048, stream: false }),
+              headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'false' },
+              body: JSON.stringify({ model: modelId, max_tokens: 2048, temperature: 0.7, ...(systemInstruction ? { system: systemInstruction } : {}), messages: [...safeHistory, { role: 'user', content: message }].map((item: any) => ({ role: item.role === 'assistant' ? 'assistant' : 'user', content: item.content })) }),
+            });
+          } else if (isGemini) {
+            upstream = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelId)}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ...(systemInstruction ? { systemInstruction: { parts: [{ text: systemInstruction }] } } : {}), contents: [...safeHistory, { role: 'user', content: message }].map((item: any) => ({ role: item.role === 'assistant' ? 'model' : 'user', parts: [{ text: item.content }] })), generationConfig: { temperature: 0.7, maxOutputTokens: 2048 } }),
             });
           } else {
-            upstream = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelId)}:generateContent?key=${encodeURIComponent(model.apiKey)}`, {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ ...(systemInstruction ? { systemInstruction: { parts: [{ text: systemInstruction }] } } : {}), contents: [{ role: 'user', parts: [{ text: message }] }], generationConfig: { temperature: 0.7, maxOutputTokens: 2048 } }),
+            const defaultEndpoint = provider.includes('openrouter') ? 'https://openrouter.ai/api/v1/chat/completions'
+              : provider.includes('nvidia') ? 'https://integrate.api.nvidia.com/v1/chat/completions'
+              : provider === 'openai' ? 'https://api.openai.com/v1/chat/completions'
+              : provider.includes('deepseek') ? 'https://api.deepseek.com/chat/completions'
+              : provider.includes('groq') ? 'https://api.groq.com/openai/v1/chat/completions'
+              : provider.includes('together') ? 'https://api.together.xyz/v1/chat/completions'
+              : provider.includes('mistral') ? 'https://api.mistral.ai/v1/chat/completions'
+              : provider.includes('xai') ? 'https://api.x.ai/v1/chat/completions'
+              : 'https://api.openai.com/v1/chat/completions';
+            // Temporary models use fixed provider URLs, not user-controlled endpoints.
+            const requestEndpoint = temporary ? defaultEndpoint : (endpoint || defaultEndpoint);
+            upstream = await fetch(requestEndpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}`, ...(provider.includes('openrouter') ? { 'HTTP-Referer': 'https://anapse.github.io/BOT-IA-PC/', 'X-OpenRouter-Title': 'BOT IA PC' } : {}) },
+              body: JSON.stringify({ model: modelId, messages: [...(systemInstruction ? [{ role: 'system', content: systemInstruction }] : []), ...safeHistory, { role: 'user', content: message }], temperature: 0.7, max_tokens: 2048, stream: false }),
             });
           }
         } catch { return json({ error: 'No se pudo conectar con el proveedor de IA.' }, 502); }
         const result: any = await upstream.json().catch(() => ({}));
         if (!upstream.ok) {
-          const apiMessage = typeof result?.error?.message === 'string' ? result.error.message : (typeof result?.detail === 'string' ? result.detail : (typeof result?.message === 'string' ? result.message : (typeof result?.title === 'string' ? result.title : 'El proveedor rechazó la solicitud.')));
-          const authHint = isNvidia && upstream.status === 401 ? ' Comprueba que la clave sea nvapi- de build.nvidia.com, esté completa y sin espacios.' : isNvidia && upstream.status === 403 ? ' NVIDIA puede no tener habilitado el acceso a inferencia para tu cuenta.' : '';
-          return json({ error: `${isOpenRouter ? 'OpenRouter' : isNvidia ? 'NVIDIA NIM' : 'Gemini'} (HTTP ${upstream.status}): ${apiMessage.slice(0, 300)}${authHint}` }, upstream.status === 429 ? 429 : 502);
+          const apiMessage = typeof result?.error?.message === 'string' ? result.error.message : (typeof result?.error?.type === 'string' ? result.error.type : (typeof result?.detail === 'string' ? result.detail : (typeof result?.message === 'string' ? result.message : 'El proveedor rechazó la solicitud.')));
+          return json({ error: `${provider.toUpperCase()} (HTTP ${upstream.status}): ${apiMessage.slice(0, 300)}` }, upstream.status === 429 ? 429 : 502);
         }
-        const reply = (isNvidia || isOpenRouter)
-          ? (typeof result?.choices?.[0]?.message?.content === 'string' ? result.choices[0].message.content.trim() : '')
-          : (Array.isArray(result?.candidates?.[0]?.content?.parts) ? result.candidates[0].content.parts.map((part: any) => typeof part?.text === 'string' ? part.text : '').join('').trim() : '');
-        if (!reply) return json({ error: `${isOpenRouter ? 'OpenRouter' : isNvidia ? 'NVIDIA NIM' : 'Gemini'} respondió, pero no devolvió texto. Revisa el modelo o sus permisos.` }, 502);
+        const reply = isAnthropic
+          ? (Array.isArray(result?.content) ? result.content.map((part: any) => typeof part?.text === 'string' ? part.text : '').join('').trim() : '')
+          : isGemini
+            ? (Array.isArray(result?.candidates?.[0]?.content?.parts) ? result.candidates[0].content.parts.map((part: any) => typeof part?.text === 'string' ? part.text : '').join('').trim() : '')
+            : (typeof result?.choices?.[0]?.message?.content === 'string' ? result.choices[0].message.content.trim() : '');
+        if (!reply) return json({ error: `${provider.toUpperCase()} respondió, pero no devolvió texto. Revisa el ID del modelo o sus permisos.` }, 502);
         return json({ status: 'ok', reply, model: modelId });
       }
 
