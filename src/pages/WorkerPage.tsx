@@ -85,8 +85,15 @@ export const WorkerPage = () => {
       let message = `Sincronización correcta. Enviados a KV: ${payload.agents.length} agentes, ${payload.models.length} modelos y ${payload.connections.length} conexiones.`;
       if (webhookResults.length) {
         message += ` Webhooks Telegram: ${registered} registrados${failed ? `, ${failed} con error` : ''}${inactive ? `, ${inactive} inactivos (sin webhook)` : ''}.`;
-        const failures = webhookResults.filter((item: any) => item.status === 'error' && item.description).map((item: any) => item.description);
-        if (failures.length) message += ` Detalle: ${failures.join('; ')}`;
+        const webhookDetails = webhookResults.map((item: any) => {
+          const connection = connections.find((candidate: any) => String(candidate?.id) === String(item?.id));
+          const label = String(item?.name || connection?.name || connection?.username || item?.id || 'Conexión sin nombre');
+          if (item.status === 'registered') return `${label}: webhook registrado correctamente`;
+          if (item.status === 'inactive') return `${label}: conexión inactiva; no se registró webhook`;
+          if (item.status === 'error') return `${label}: ERROR — ${item.description || 'no se pudo registrar el webhook'}`;
+          return `${label}: estado ${item.status || 'desconocido'}`;
+        });
+        if (webhookDetails.length) message += ` Detalle por bot: ${webhookDetails.join(' | ')}.`;
       }
       setStatus(message);
       setStatusType(failed ? 'error' : 'success');
