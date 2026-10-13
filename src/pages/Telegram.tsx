@@ -4,7 +4,7 @@ import { InputField } from '../components/InputField';
 import { ActionButton } from '../components/ActionButton';
 import { subscribeCollection, addData, updateData, deleteData, getDocData, getCollectionDataStrict } from '../services/firebase/db';
 import { syncWorkerConfig } from '../services/worker/client';
-import { MessageSquare, Plus, Trash2, Power, ShieldCheck, ExternalLink } from 'lucide-react';
+import { MessageSquare, Plus, Trash2, Power, ShieldCheck, Pencil } from 'lucide-react';
 
 interface TelegramConnection {
   id: string;
@@ -22,6 +22,7 @@ export const TelegramPage = () => {
   const [agents, setAgents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingConnection, setEditingConnection] = useState<TelegramConnection | null>(null);
 
   // Form fields
   const [name, setName] = useState('');
@@ -77,29 +78,59 @@ export const TelegramPage = () => {
     }
   };
 
-  const handleCreate = async (e: React.FormEvent) => {
+  const resetForm = () => {
+    setName('');
+    setBotUsername('');
+    setBotToken('');
+    setAgentId('');
+    setEditingConnection(null);
+    setErrorMsg('');
+  };
+
+  const openCreateModal = () => {
+    resetForm();
+    setIsModalOpen(true);
+  };
+
+  const openEditModal = (conn: TelegramConnection) => {
+    setEditingConnection(conn);
+    setName(conn.name || '');
+    setBotUsername(conn.botUsername || '');
+    setBotToken('');
+    setAgentId(conn.agentId || '');
+    setErrorMsg('');
+    setIsModalOpen(true);
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !botToken.trim()) {
-      setErrorMsg('Nombre y Token del bot son obligatorios.');
+    if (!name.trim() || (!editingConnection && !botToken.trim())) {
+      setErrorMsg(editingConnection ? 'El nombre del bot es obligatorio.' : 'Nombre y Token del bot son obligatorios.');
       return;
     }
-
     setSaving(true);
     setErrorMsg('');
     try {
-      await addData('telegramConnections', {
-        name: name.trim(),
-        botUsername: botUsername.trim(),
-        botToken: botToken.trim(),
-        agentId: agentId || (agents[0]?.id || ''),
-        status: 'activo',
-        createdAt: new Date().toISOString(),
-      });
+      if (editingConnection) {
+        const changes: Partial<TelegramConnection> = {
+          name: name.trim(),
+          botUsername: botUsername.trim(),
+          agentId: agentId || '',
+        };
+        if (botToken.trim()) changes.botToken = botToken.trim();
+        await updateData('telegramConnections', editingConnection.id, changes);
+      } else {
+        await addData('telegramConnections', {
+          name: name.trim(),
+          botUsername: botUsername.trim(),
+          botToken: botToken.trim(),
+          agentId: agentId || (agents[0]?.id || ''),
+          status: 'activo',
+          createdAt: new Date().toISOString(),
+        });
+      }
       await syncAfterChange();
-      setName('');
-      setBotUsername('');
-      setBotToken('');
-      setAgentId('');
+      resetForm();
       setIsModalOpen(false);
     } catch (err: any) {
       setErrorMsg(err.message || 'Error al guardar la conexión');
@@ -144,7 +175,7 @@ export const TelegramPage = () => {
           </h2>
           <p className="text-sm text-slate-400 mt-1">Conecta tus bots de Telegram con agentes de IA autónomos.</p>
         </div>
-        <ActionButton label="Conectar Bot" onClick={() => setIsModalOpen(true)} icon={<Plus size={16} />} />
+        <ActionButton label="Conectar Bot" onClick={openCreateModal} icon={<Plus size={16} />} />
       </div>
 
       {syncError && (
@@ -164,7 +195,7 @@ export const TelegramPage = () => {
             <p className="text-sm text-slate-500 max-w-sm mx-auto">
               Registra un bot creado con @BotFather en Telegram para permitir que los usuarios interactúen con tus agentes de IA.
             </p>
-            <ActionButton label="Registrar primer bot" onClick={() => setIsModalOpen(true)} />
+            <ActionButton label="Registrar primer bot" onClick={openCreateModal} />
           </div>
         </Card>
       ) : (
@@ -217,6 +248,15 @@ export const TelegramPage = () => {
                     <Power size={14} className={conn.status === 'activo' ? 'text-emerald-400' : 'text-slate-500'} />
                     <span>{conn.status === 'activo' ? 'Desconectar' : 'Conectar'}</span>
                   </button>
+                  <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => openEditModal(conn)}
+                    className="p-1.5 text-slate-400 hover:text-cyan-400 hover:bg-slate-800 rounded transition-colors"
+                    title="Editar bot"
+                    aria-label={`Editar ${conn.name}`}
+                  >
+                    <Pencil size={15} />
+                  </button>
                   <button
                     onClick={() => handleDelete(conn.id)}
                     className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-slate-800 rounded transition-colors"
@@ -224,6 +264,7 @@ export const TelegramPage = () => {
                   >
                     <Trash2 size={15} />
                   </button>
+                  </div>
                 </div>
               </Card>
             );
@@ -231,16 +272,16 @@ export const TelegramPage = () => {
         </div>
       )}
 
-      {/* Modal Conectar Bot */}
+      {/* Modal crear o editar Bot */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-md overflow-hidden shadow-2xl">
             <div className="p-5 border-b border-slate-800 flex justify-between items-center">
-              <h3 className="font-semibold text-slate-100 text-lg">Vincular Bot de Telegram</h3>
-              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-200">✕</button>
+              <h3 className="font-semibold text-slate-100 text-lg">{editingConnection ? "Editar Bot de Telegram" : "Vincular Bot de Telegram"}</h3>
+              <button onClick={() => { setIsModalOpen(false); resetForm(); }} className="text-slate-400 hover:text-slate-200">✕</button>
             </div>
 
-            <form onSubmit={handleCreate} className="p-5 space-y-4">
+            <form onSubmit={handleSave} className="p-5 space-y-4">
               {errorMsg && (
                 <div className="p-3 bg-red-950/50 border border-red-800/60 text-red-300 text-xs rounded">
                   {errorMsg}
@@ -265,7 +306,7 @@ export const TelegramPage = () => {
                 label="Bot Token (@BotFather)"
                 value={botToken}
                 onChange={setBotToken}
-                placeholder="123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ"
+                placeholder={editingConnection ? "Deja vacío para conservar el token actual" : "123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ"}
                 isSecret
               />
 
@@ -286,13 +327,13 @@ export const TelegramPage = () => {
               <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
                 <button
                   type="button"
-                  onClick={() => setIsModalOpen(false)}
+                  onClick={() => { setIsModalOpen(false); resetForm(); }}
                   className="px-4 py-2 text-sm text-slate-400 hover:text-slate-200 rounded-lg"
                 >
                   Cancelar
                 </button>
                 <ActionButton
-                  label={saving ? 'Vinculando...' : 'Guardar Conexión'}
+                  label={saving ? 'Guardando...' : editingConnection ? 'Guardar Cambios' : 'Guardar Conexión'}
                   onClick={() => {}}
                 />
               </div>
