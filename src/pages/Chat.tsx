@@ -6,7 +6,8 @@ import { sendAgentChatMessage } from '../services/worker/client';
 type Agent = { id: string; name: string; description?: string; model?: string; status?: 'activo' | 'inactivo' | 'pausado'; systemPrompt?: string; personality?: string };
 type ModelOption = { id: string; name: string; modelId?: string; provider?: string; connectionType?: 'cloud' | 'local'; status?: 'activo' | 'inactivo'; apiKey?: string };
 type ChatMessage = { id: string; role: 'user' | 'assistant'; content: string; createdAt: string; model?: string };
-type Conversation = { id: string; title: string; agentId: string; targetMode?: 'agent' | 'model'; targetId?: string; messages: ChatMessage[]; updatedAt: string };
+type TemporaryModel = { provider: string; modelId: string; name: string };
+type Conversation = { id: string; title: string; agentId: string; targetMode?: 'agent' | 'model'; targetId?: string; temporaryModel?: TemporaryModel; messages: ChatMessage[]; updatedAt: string };
 const normalizeCommand = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim().replace(/\s+/g, ' ');
 const aliasFor = (agent: Agent) => normalizeCommand(agent.name).split(' ')[0];
 const STORAGE_KEY = 'bot-ia-pc-chat-conversations-v1';
@@ -24,6 +25,9 @@ export const ChatPage = () => {
   const [selectedAgentId, setSelectedAgentId] = useState('');
   const [targetMode, setTargetMode] = useState<'agent' | 'model'>('agent');
   const [selectedModelId, setSelectedModelId] = useState('');
+  const [temporaryProvider, setTemporaryProvider] = useState('openai');
+  const [temporaryModelId, setTemporaryModelId] = useState('');
+  const [temporaryApiKey, setTemporaryApiKey] = useState('');
   const [targetSearch, setTargetSearch] = useState('');
   const [message, setMessage] = useState('');
   const [workerUrl, setWorkerUrl] = useState('https://bot-ia-pc.elherreroanapse.workers.dev');
@@ -58,6 +62,12 @@ export const ChatPage = () => {
   const effectiveTargetId = activeConversation?.targetId || activeConversation?.agentId || selectedAgentId;
   const selectedAgent = agents.find(agent => agent.id === (effectiveMode === 'agent' ? effectiveTargetId : selectedAgentId)) || null;
   const selectedModel = models.find(model => model.id === (effectiveMode === 'model' ? effectiveTargetId : selectedModelId)) || null;
+  const activeTemporaryModel = activeConversation?.temporaryModel || null;
+  const temporarySelected = effectiveMode === 'model' && (Boolean(activeTemporaryModel) || (!activeConversation && selectedModelId === '__temporary__'));
+  const effectiveTemporaryProvider = activeTemporaryModel?.provider || temporaryProvider;
+  const effectiveTemporaryModelId = activeTemporaryModel?.modelId || temporaryModelId;
+  const temporaryReady = Boolean(effectiveTemporaryProvider && effectiveTemporaryModelId.trim() && temporaryApiKey.trim());
+  const temporaryLabel = activeTemporaryModel?.name || (effectiveTemporaryModelId.trim() ? `${effectiveTemporaryModelId.trim()} · temporal` : 'Modelo temporal');
   const filteredAgents = agents.filter(agent => normalizeCommand(agent.name).includes(normalizeCommand(targetSearch)));
   const filteredModels = models.filter(model => normalizeCommand(`${model.name} ${model.modelId || ''} ${model.provider || ''}`).includes(normalizeCommand(targetSearch)));
   const currentMessages = activeConversation?.messages || [];
@@ -84,7 +94,7 @@ export const ChatPage = () => {
 
     let outgoingText = rawText;
     let mode: 'agent' | 'model' = activeConversation?.targetMode || targetMode;
-    let targetId = activeConversation?.targetId || activeConversation?.agentId || (mode === 'agent' ? selectedAgentId : selectedModelId);
+    let targetId = activeConversation?.targetId || activeConversation?.agentId || (mode === 'agent' ? selectedAgentId : selectedModelId);\n    const useTemporaryModel = mode === 'model' && (Boolean(activeConversation?.temporaryModel) || (!activeConversation && selectedModelId === '__temporary__'));\n    const temporaryModel = useTemporaryModel ? (activeConversation?.temporaryModel || { provider: temporaryProvider, modelId: temporaryModelId.trim(), name: `${temporaryModelId.trim()} · temporal` }) : undefined;\n    if (useTemporaryModel) targetId = `temp:${temporaryModel!.provider}:${temporaryModel!.modelId}`;
     let localReply = '';
 
     if (/^\$agente\s+list\s*$/i.test(rawText)) {
@@ -126,7 +136,7 @@ export const ChatPage = () => {
     const userMessage: ChatMessage = { id: makeId(), role: 'user', content: rawText, createdAt: now };
     let conversation = activeConversation;
     if (!conversation || mode !== (conversation.targetMode || 'agent') || targetId !== (conversation.targetId || conversation.agentId)) {
-      conversation = { id: makeId(), title: rawText.length > 42 ? `${rawText.slice(0, 42).trim()}…` : rawText, agentId: mode === 'agent' ? targetId : '', targetMode: mode, targetId, messages: [], updatedAt: now };
+      conversation = { id: makeId(), title: rawText.length > 42 ? `${rawText.slice(0, 42).trim()}…` : rawText, agentId: mode === 'agent' ? targetId : '', targetMode: mode, targetId, ...(useTemporaryModel && temporaryModel ? { temporaryModel } : {}), messages: [], updatedAt: now };
       setActiveConversationId(conversation.id);
       setConversations(current => [conversation!, ...current]);
     }
@@ -150,7 +160,7 @@ export const ChatPage = () => {
     setConversations(current => current.filter(item => item.id !== id));
     if (activeConversationId === id) setActiveConversationId('');
   };
-  const selectConversation = (item: Conversation) => { setActiveConversationId(item.id); setTargetMode(item.targetMode || 'agent'); setSelectedAgentId(item.agentId); if (item.targetMode === 'model' && item.targetId) setSelectedModelId(item.targetId); setError(''); };
+  const selectConversation = (item: Conversation) => { setActiveConversationId(item.id); setTargetMode(item.targetMode || 'agent'); setSelectedAgentId(item.agentId); if (item.targetMode === 'model' && item.targetId) { setSelectedModelId(item.temporaryModel ? '__temporary__' : item.targetId); if (item.temporaryModel) { setTemporaryProvider(item.temporaryModel.provider); setTemporaryModelId(item.temporaryModel.modelId); } } setError(''); };
 
   return <div className="flex -m-4 sm:-m-8 h-[calc(100dvh-64px)] min-h-[520px] overflow-hidden bg-slate-950 text-slate-100">
     {sidebarOpen && <aside className="w-64 shrink-0 border-r border-slate-800 bg-slate-950 flex flex-col max-md:w-[76px]">
@@ -169,33 +179,33 @@ export const ChatPage = () => {
     </aside>}
     <section className="flex min-w-0 flex-1 flex-col">
       <header className="flex min-h-[62px] items-center justify-between gap-3 border-b border-slate-800 px-3 sm:px-5">
-        <div className="flex min-w-0 items-center gap-2"><button onClick={() => setSidebarOpen(value => !value)} title={sidebarOpen ? 'Ocultar conversaciones' : 'Mostrar conversaciones'} className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white">{sidebarOpen ? <PanelLeftClose size={18}/> : <PanelLeftOpen size={18}/>}</button><div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-cyan-950 text-cyan-300"><Bot size={17}/></div><div className="min-w-0"><p className="truncate text-sm font-semibold">{activeConversation ? activeConversation.title : 'Nuevo chat'}</p><p className="text-[11px] text-slate-500">Conversación con tus agentes de IA</p></div></div>
+        <div className="flex min-w-0 items-center gap-2"><button onClick={() => setSidebarOpen(value => !value)} title={sidebarOpen ? 'Ocultar conversaciones' : 'Mostrar conversaciones'} className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white">{sidebarOpen ? <PanelLeftClose size={18}/> : <PanelLeftOpen size={18}/>}</button><div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-cyan-950 text-cyan-300"><Bot size={17}/></div><div className="min-w-0"><p className="truncate text-sm font-semibold">{activeConversation ? activeConversation.title : 'Nuevo chat'}</p><p className="text-[11px] text-slate-500">Conversaciones separadas por agente o modelo</p></div></div>
         <div className="flex max-w-[62%] items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-900 p-1.5 sm:gap-2 sm:px-3 sm:py-2">
           <select aria-label="Tipo de destino" value={activeConversation ? (activeConversation.targetMode || 'agent') : targetMode} onChange={event => { const next = event.target.value as 'agent' | 'model'; setTargetMode(next); setActiveConversationId(''); setError(''); }} className="max-w-[86px] bg-transparent text-xs text-cyan-300 outline-none sm:max-w-none sm:text-sm"><option value="agent" className="bg-slate-900">Agente</option><option value="model" className="bg-slate-900">Modelo</option></select>
           <input aria-label="Buscar agente o modelo" value={targetSearch} onChange={event => setTargetSearch(event.target.value)} placeholder="Buscar…" className="hidden w-24 min-w-0 bg-transparent text-xs text-slate-200 outline-none placeholder:text-slate-600 sm:block"/>
-          <select aria-label={targetMode === 'agent' ? 'Seleccionar agente' : 'Seleccionar modelo'} value={activeConversation?.targetId || (targetMode === 'agent' ? selectedAgentId : selectedModelId)} onChange={event => { if (targetMode === 'agent') setSelectedAgentId(event.target.value); else setSelectedModelId(event.target.value); setActiveConversationId(''); setError(''); }} disabled={targetMode === 'agent' ? loadingAgents || agents.length === 0 : models.length === 0} className="min-w-0 max-w-[120px] bg-transparent text-xs text-slate-100 outline-none sm:max-w-[190px] sm:text-sm">
-            {targetMode === 'agent' ? (loadingAgents ? <option value="">Cargando…</option> : filteredAgents.length ? filteredAgents.map(agent => <option key={agent.id} value={agent.id} className="bg-slate-900">{agent.name}</option>) : <option value="">Sin agentes</option>) : (filteredModels.length ? filteredModels.map(model => <option key={model.id} value={model.id} className="bg-slate-900">{model.name} · {model.provider || model.modelId}</option>) : <option value="">Sin modelos compatibles</option>)}
+          <select aria-label={targetMode === 'agent' ? 'Seleccionar agente' : 'Seleccionar modelo'} value={activeConversation ? (activeConversation.temporaryModel ? '__temporary__' : (activeConversation.targetId || '')) : (targetMode === 'agent' ? selectedAgentId : selectedModelId)} onChange={event => { if (targetMode === 'agent') setSelectedAgentId(event.target.value); else setSelectedModelId(event.target.value); setActiveConversationId(''); setError(''); }} disabled={targetMode === 'agent' ? loadingAgents || agents.length === 0 : models.length === 0} className="min-w-0 max-w-[120px] bg-transparent text-xs text-slate-100 outline-none sm:max-w-[190px] sm:text-sm">
+            {targetMode === 'agent' ? (loadingAgents ? <option value="">Cargando…</option> : filteredAgents.length ? filteredAgents.map(agent => <option key={agent.id} value={agent.id} className="bg-slate-900">{agent.name}</option>) : <option value="">Sin agentes</option>)  : (<> {filteredModels.map(model => <option key={model.id} value={model.id} className="bg-slate-900">{model.name} · {model.provider || model.modelId}</option>)} <option value="__temporary__" className="bg-slate-900">＋ Modelo temporal…</option></>)}
           </select><ChevronDown size={14} className="shrink-0 text-slate-500"/>
         </div>
       </header>
       <div className="flex-1 overflow-y-auto"><div className="mx-auto flex min-h-full w-full max-w-3xl flex-col px-4 py-6 sm:px-6 sm:py-8">
         {!currentMessages.length ? <div className="flex flex-1 flex-col items-center justify-center py-10 text-center">
           <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-slate-700 bg-slate-900 text-cyan-300 shadow-lg shadow-black/20"><Sparkles size={26}/></div><h2 className="text-xl sm:text-2xl font-semibold tracking-tight">¿En qué te ayudo?</h2>
-          <p className="mt-2 max-w-md text-sm leading-6 text-slate-400">{effectiveMode === 'model' ? `Estás hablando directamente con ${selectedModel?.name || 'el modelo seleccionado'}, sin personalidad de agente.` : selectedAgent ? `Estás conversando con ${selectedAgent.name}. Escribe una pregunta o cuéntale qué necesitas.` : 'Selecciona un agente activo para empezar a conversar.'}</p>
+          <p className="mt-2 max-w-md text-sm leading-6 text-slate-400">{effectiveMode === 'model' ? `Estás hablando directamente con ${temporarySelected ? temporaryLabel : (selectedModel?.name || 'el modelo seleccionado')}, sin personalidad de agente.` : selectedAgent ? `Estás conversando con ${selectedAgent.name}. Escribe una pregunta o cuéntale qué necesitas.` : 'Selecciona un agente activo para empezar a conversar.'}</p>
           {effectiveMode === 'agent' && selectedAgent?.description && <div className="mt-5 max-w-md rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3 text-left text-xs leading-5 text-slate-400">{selectedAgent.description}</div>}
           <div className="mt-7 grid w-full max-w-xl grid-cols-1 gap-2 sm:grid-cols-2">{['Explícame algo paso a paso','Ayúdame a resolver un problema','Dame ideas para un proyecto','Resume este texto'].map(suggestion => <button key={suggestion} onClick={() => setMessage(suggestion)} className="rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-3 text-left text-xs sm:text-sm text-slate-300 hover:border-slate-600 hover:bg-slate-900 transition-colors">{suggestion}</button>)}</div>
         </div> : <div className="space-y-7 pb-6">{currentMessages.map(item => <div key={item.id} className={`flex gap-3 sm:gap-4 ${item.role === 'user' ? 'justify-end' : 'justify-start'}`}>
           {item.role === 'assistant' && <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-cyan-950 text-cyan-300"><Bot size={17}/></div>}
-          <div className={`max-w-[88%] min-w-0 sm:max-w-[82%] ${item.role === 'user' ? 'rounded-2xl rounded-br-md bg-slate-800 px-4 py-3' : 'pt-1'}`}>{item.role === 'assistant' && <p className="mb-2 text-xs font-semibold text-slate-300">{effectiveMode === 'model' ? (selectedModel?.name || 'Modelo IA') : (selectedAgent?.name || 'Agente IA')}</p>}<div className="whitespace-pre-wrap break-words text-sm leading-7 text-slate-200">{item.content}</div>{item.model && <p className="mt-2 text-[10px] text-slate-600">Modelo: {item.model}</p>}</div>
+          <div className={`max-w-[88%] min-w-0 sm:max-w-[82%] ${item.role === 'user' ? 'rounded-2xl rounded-br-md bg-slate-800 px-4 py-3' : 'pt-1'}`}>{item.role === 'assistant' && <p className="mb-2 text-xs font-semibold text-slate-300">{effectiveMode === 'model' ? (temporarySelected ? temporaryLabel : (selectedModel?.name || 'Modelo IA')) : (selectedAgent?.name || 'Agente IA')}</p>}<div className="whitespace-pre-wrap break-words text-sm leading-7 text-slate-200">{item.content}</div>{item.model && <p className="mt-2 text-[10px] text-slate-600">Modelo: {item.model}</p>}</div>
           {item.role === 'user' && <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-700 text-slate-200"><UserRound size={16}/></div>}
-        </div>)}{sending && <div className="flex gap-3"><div className="flex h-8 w-8 items-center justify-center rounded-full bg-cyan-950 text-cyan-300"><Bot size={17}/></div><div className="flex items-center gap-2 pt-1 text-sm text-slate-400"><LoaderCircle size={16} className="animate-spin"/>{effectiveMode === 'model' ? (selectedModel?.name || 'El modelo') : (selectedAgent?.name || 'El agente')} está pensando…</div></div>}<div ref={messagesEndRef}/></div>}
+        </div>)}{sending && <div className="flex gap-3"><div className="flex h-8 w-8 items-center justify-center rounded-full bg-cyan-950 text-cyan-300"><Bot size={17}/></div><div className="flex items-center gap-2 pt-1 text-sm text-slate-400"><LoaderCircle size={16} className="animate-spin"/>{effectiveMode === 'model' ? (temporarySelected ? temporaryLabel : (selectedModel?.name || 'El modelo')) : (selectedAgent?.name || 'El agente')} está pensando…</div></div>}<div ref={messagesEndRef}/></div>}
       </div></div>
       <div className="px-3 pb-3 sm:px-5 sm:pb-5"><div className="mx-auto max-w-3xl">
         {error && <div className="mb-3 flex items-start gap-2 rounded-xl border border-red-900/70 bg-red-950/30 px-3 py-2.5 text-xs leading-5 text-red-300"><AlertCircle size={15} className="mt-0.5 shrink-0"/>{error}</div>}
         <form onSubmit={handleSend} className="rounded-2xl border border-slate-700 bg-slate-900 shadow-lg shadow-black/20 focus-within:border-slate-500">
-          <textarea ref={textareaRef} value={message} onChange={event => setMessage(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void handleSend(); } }} placeholder={effectiveMode === 'model' ? `Escribe a ${selectedModel?.name || 'el modelo'}…` : selectedAgent ? `Escribe a ${selectedAgent.name}…` : 'Activa o crea un agente para empezar…'} rows={2} disabled={(effectiveMode === 'model' ? !selectedModel : !selectedAgent) || sending} className="max-h-40 min-h-[58px] w-full resize-y bg-transparent px-4 pt-4 pb-2 text-sm text-slate-100 placeholder:text-slate-500 outline-none disabled:opacity-50"/>
-          <div className="flex items-center justify-between gap-3 px-3 pb-3"><p className="text-[10px] text-slate-600">Enter para enviar · Shift + Enter para nueva línea</p><button type="submit" disabled={!message.trim() || (effectiveMode === 'model' ? !selectedModel : !selectedAgent) || sending} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-cyan-600 text-white transition-colors hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-40" title="Enviar mensaje">{sending ? <LoaderCircle size={17} className="animate-spin"/> : <Send size={16}/>}</button></div>
-        </form><p className="mt-2 text-center text-[10px] text-slate-600">En modo Agente se aplica su personalidad; en modo Modelo se consulta directamente sin instrucciones del agente.</p>
+          <textarea ref={textareaRef} value={message} onChange={event => setMessage(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void handleSend(); } }} placeholder={effectiveMode === 'model' ? `Escribe a ${temporarySelected ? temporaryLabel : (selectedModel?.name || 'el modelo')}…` : selectedAgent ? `Escribe a ${selectedAgent.name}…` : 'Activa o crea un agente para empezar…'} rows={2} disabled={(effectiveMode === 'model' ? (!selectedModel && !temporarySelected) : !selectedAgent) || sending} className="max-h-40 min-h-[58px] w-full resize-y bg-transparent px-4 pt-4 pb-2 text-sm text-slate-100 placeholder:text-slate-500 outline-none disabled:opacity-50"/>
+          <div className="flex items-center justify-between gap-3 px-3 pb-3"><p className="text-[10px] text-slate-600">Enter para enviar · Shift + Enter para nueva línea</p><button type="submit" disabled={!message.trim() || (effectiveMode === 'model' ? (temporarySelected ? !temporaryReady : !selectedModel) : !selectedAgent) || sending} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-cyan-600 text-white transition-colors hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-40" title="Enviar mensaje">{sending ? <LoaderCircle size={17} className="animate-spin"/> : <Send size={16}/>}</button></div>
+        </form><p className="mt-2 text-center text-[10px] text-slate-600">En modo Agente se aplica su personalidad; en modo Modelo se consulta directamente. Los modelos temporales no se registran y requieren volver a introducir la clave al recargar.</p>
       </div></div>
     </section>
   </div>;
