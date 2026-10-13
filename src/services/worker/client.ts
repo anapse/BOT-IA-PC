@@ -77,7 +77,7 @@ export type TemporaryModelRequest = { provider: string; modelId: string; apiKey:
 
 export const syncWorkerProviders = async (workerUrl: string, providers: any[]) => {
   const token = await getAdminToken();
-  const response = await fetch(workerUrl.replace(/\\/$/, '') + '/providers/sync', {
+  const response = await fetch(workerUrl.replace(/\/$/, '') + '/providers/sync', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
     body: JSON.stringify({ providers }),
