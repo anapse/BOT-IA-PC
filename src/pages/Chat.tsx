@@ -56,7 +56,7 @@ export const ChatPage = () => {
       setProviders(active);
       const nextId = active.some(provider => provider.id === selectedProviderId) ? selectedProviderId : (active[0]?.id || '');
       setSelectedProviderId(nextId);
-      if (nextId) void refreshProviderModels(nextId);
+
     });
     const unsubscribeModels = subscribeCollection('modelConfigs', data => {
       const availableModels = (data as ModelOption[]).filter(model => (!model.status || model.status === 'activo') && model.connectionType !== 'local' && Boolean(model.modelId));
@@ -87,6 +87,8 @@ export const ChatPage = () => {
     } catch (e: any) { setError(e?.message || 'No se pudo cargar el catálogo.'); }
     finally { setCatalogLoading(false); }
   };
+
+  useEffect(() => { if (selectedProviderId && providers.some(provider => provider.id === selectedProviderId)) void refreshProviderModels(selectedProviderId); }, [selectedProviderId, providers]);
 
   useEffect(() => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations)); } catch { /* storage unavailable */ } }, [conversations]);
   const activeConversation = conversations.find(item => item.id === activeConversationId) || null;
