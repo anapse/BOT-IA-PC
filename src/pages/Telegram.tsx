@@ -57,14 +57,16 @@ export const TelegramPage = () => {
     const workerSettings = await getDocData('appSettings', 'workerConfig');
     const workerUrl = String(workerSettings?.value || 'https://bot-ia-pc.elherreroanapse.workers.dev').trim().replace(/\/$/, '');
     if (!workerUrl) throw new Error('No hay una URL de Worker configurada.');
-    const [currentAgents, currentModels, currentConnections] = await Promise.all([
+    const [currentAgents, currentModels, currentConnections, currentProviders] = await Promise.all([
       getCollectionDataStrict('agents'),
       getCollectionDataStrict('modelConfigs'),
       getCollectionDataStrict('telegramConnections'),
+      getCollectionDataStrict('providers'),
     ]);
     return syncWorkerConfig(workerUrl, {
       agents: currentAgents || [],
       models: currentModels || [],
+      providers: currentProviders || [],
       connections: currentConnections || [],
       syncedAt: new Date().toISOString(),
     });
