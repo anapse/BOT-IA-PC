@@ -95,7 +95,27 @@ export default {
         const payload: any = await upstream.json().catch(() => ({}));
         if (!upstream.ok) { const detail = typeof payload?.error?.message === 'string' ? payload.error.message : (typeof payload?.detail === 'string' ? payload.detail : (typeof payload?.message === 'string' ? payload.message : (typeof payload?.title === 'string' ? payload.title : 'El proveedor rechazó la clave.'))); const hint = upstream.status === 401 ? ' Verifica que sea una API Key nvapi- creada en build.nvidia.com y que no tenga espacios.' : upstream.status === 403 ? ' La cuenta puede no tener permiso para usar este endpoint.' : ''; return json({ error: 'Catálogo (HTTP ' + upstream.status + '): ' + detail.slice(0, 250) + hint }, upstream.status === 401 || upstream.status === 403 ? 400 : 502); }
         const source = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload?.models) ? payload.models : [];
-        const models = source.map((item: any) => { const id = String(item?.id || item?.name || '').replace(/^models\//, ''); const name = String(item?.name || item?.displayName || id).replace(/^models\//, ''); return id ? { id, name, contextLength: item?.context_length || item?.inputTokenLimit || null } : null; }).filter(Boolean).sort((a: any, b: any) => a.name.localeCompare(b.name));
+        const models = source.map((item: any) => {
+          const id = String(item?.id || item?.name || '').replace(/^models\//, '');
+          const name = String(item?.name || item?.displayName || id).replace(/^models\//, '');
+          const inputModalities = Array.isArray(item?.architecture?.input_modalities)
+            ? item.architecture.input_modalities
+            : Array.isArray(item?.input_modalities) ? item.input_modalities
+            : Array.isArray(item?.inputModalities) ? item.inputModalities : null;
+          const outputModalities = Array.isArray(item?.architecture?.output_modalities)
+            ? item.architecture.output_modalities
+            : Array.isArray(item?.output_modalities) ? item.output_modalities
+            : Array.isArray(item?.outputModalities) ? item.outputModalities : null;
+          return id ? {
+            id,
+            name,
+            contextLength: item?.context_length || item?.inputTokenLimit || null,
+            inputModalities: inputModalities ? inputModalities.map((value: any) => String(value).toLowerCase()) : [],
+            outputModalities: outputModalities ? outputModalities.map((value: any) => String(value).toLowerCase()) : [],
+            inputModalitiesKnown: inputModalities !== null,
+            outputModalitiesKnown: outputModalities !== null,
+          } : null;
+        }).filter(Boolean).sort((a: any, b: any) => a.name.localeCompare(b.name));
         return json({ models, count: models.length });
       } catch { return json({ error: 'No se pudo consultar el catálogo del proveedor.' }, 502); }
     }
