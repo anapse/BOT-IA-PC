@@ -141,7 +141,7 @@ export default {
     }
 
     if (url.pathname === '/providers/sync' && request.method === 'POST') {
-      const token = (request.headers.get('Authorization') || '').replace(/^Bearer\\s+/i, '');
+      const token = (request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
       const validation = await validateToken(token, env.FIREBASE_PROJECT_ID || '', String(env.ADMIN_EMAILS || '').split(',').map((email: string) => email.trim()).filter(Boolean));
       if (!validation.authorized) return json({ error: 'No autorizado para sincronizar proveedores.' }, 403);
       let input: any;
