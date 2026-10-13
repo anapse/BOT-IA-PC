@@ -16,7 +16,7 @@ interface ModelConfig {
   apiKey?: string;
   status: 'activo' | 'inactivo';
   createdAt: string;
-  workerSyncStatus?: 'synced' | 'error';
+  workerSyncStatus?: 'synced' | 'error' | 'pending';
   workerSyncedAt?: string;
   workerSyncError?: string;
 }
@@ -141,7 +141,6 @@ export const ModelsPage = () => {
           ...modelData,
           status: 'activo',
           createdAt: new Date().toISOString(),
-          workerSyncStatus: undefined,
         });
       }
       if (savedModelId) await syncModelAndReport(savedModelId);
@@ -197,7 +196,7 @@ export const ModelsPage = () => {
 
   const toggleStatus = async (model: ModelConfig) => {
     const nextStatus = model.status === 'activo' ? 'inactivo' : 'activo';
-    await updateData('modelConfigs', model.id, { status: nextStatus, workerSyncStatus: undefined });
+    await updateData('modelConfigs', model.id, { status: nextStatus, workerSyncStatus: 'pending', workerSyncError: '' });
     await syncModelAndReport(model.id);
   };
 
@@ -246,9 +245,11 @@ export const ModelsPage = () => {
                               ? `Sincronizado con el Worker${m.workerSyncedAt ? ` · ${new Date(m.workerSyncedAt).toLocaleString()}` : ''}`
                               : m.workerSyncStatus === 'error'
                                 ? `Error de sincronización: ${m.workerSyncError || 'No se pudo sincronizar'}`
-                                : 'Sin sincronizar con el Worker'
+                                : m.workerSyncStatus === 'pending'
+                                  ? 'Sincronizando con el Worker...'
+                                  : 'Sin sincronizar con el Worker'
                           }
-                          aria-label={m.workerSyncStatus === 'synced' ? 'Sincronizado' : m.workerSyncStatus === 'error' ? 'Error de sincronización' : 'Sin sincronizar'}
+                          aria-label={m.workerSyncStatus === 'synced' ? 'Sincronizado' : m.workerSyncStatus === 'error' ? 'Error de sincronización' : m.workerSyncStatus === 'pending' ? 'Sincronizando' : 'Sin sincronizar'}
                           className="inline-flex cursor-help"
                         >
                           <Circle
