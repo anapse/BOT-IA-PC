@@ -1,4 +1,4 @@
-name: Deploy Worker
+name: Test Worker
 on:
   push:
     branches:
@@ -19,23 +19,3 @@ jobs:
         run: cd cloudflare-worker && npm install
       - name: Run tests
         run: cd cloudflare-worker && npm test
-
-  deploy:
-    name: Deploy to Cloudflare
-    runs-on: ubuntu-latest
-    needs: test
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - name: Install dependencies
-        run: cd cloudflare-worker && npm install
-      - name: Deploy Worker
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: cloudflare-worker
-          command: deploy
