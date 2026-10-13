@@ -164,6 +164,7 @@ export const ChatPage = () => {
   const [temporaryModelId, setTemporaryModelId] = useState('');
   const [temporaryApiKey, setTemporaryApiKey] = useState('');
   const [targetSearch, setTargetSearch] = useState('');
+  const [imageMode, setImageMode] = useState(false);
   const [message, setMessage] = useState('');
   const [pendingAttachments, setPendingAttachments] = useState<ChatFileAttachment[]>([]);
   const [workerUrl, setWorkerUrl] = useState('https://bot-ia-pc.elherreroanapse.workers.dev');
@@ -211,7 +212,9 @@ export const ChatPage = () => {
       // Consultar el catálogo con los datos del proveedor elegido evita depender de una sincronización de configuración previa.
       const list = await fetchProviderCatalog(workerUrl, provider) as CatalogModel[];
       setCatalogModels(list);
-      setSelectedModelId(current => list.some(item => item.id === current) ? current : (list[0]?.id || ''));
+      const imageModelId = list.find(item => (item.outputModalities || []).includes('image') || /flux|imagen|stable[ ._-]?diffusion|sdxl|image[ ._-]?generation|dall[ ._-]?e|nano[ ._-]?banana|kandinsky|playground/i.test(`${item.name} ${item.id}`))?.id || '';
+      const nextModelId = imageMode ? imageModelId : (list.some(item => item.id === selectedModelId) ? selectedModelId : (list[0]?.id || ''));
+      setSelectedModelId(nextModelId);
       if (!list.length) setError('El proveedor respondió, pero no ofreció modelos disponibles.');
     } catch (e: any) {
       setCatalogModels([]);
@@ -234,7 +237,7 @@ export const ChatPage = () => {
       setCatalogLoading(false);
       setError(providers.length ? 'Selecciona un proveedor activo.' : 'No hay proveedores activos guardados.');
     }
-  }, [targetMode, selectedProviderId, providers]);
+  }, [targetMode, selectedProviderId, providers, imageMode]);
 
   useEffect(() => {
     // Keep conversation history lightweight: file bytes stay in memory, not localStorage.
@@ -251,7 +254,9 @@ export const ChatPage = () => {
   }, [conversations]);
   const activeConversation = conversations.find(item => item.id === activeConversationId) || null;
   const effectiveMode: 'agent' | 'model' = activeConversation?.targetMode || targetMode;
-  const effectiveTargetId = activeConversation ? (activeConversation.targetId || activeConversation.agentId) : (targetMode === 'agent' ? selectedAgentId : selectedModelId);
+  const effectiveTargetId = activeConversation
+    ? (activeConversation.targetMode === 'model' ? (activeConversation.targetId || selectedModelId) : (activeConversation.targetId || activeConversation.agentId))
+    : (targetMode === 'agent' ? selectedAgentId : selectedModelId);
   const selectedAgent = agents.find(agent => agent.id === (effectiveMode === 'agent' ? effectiveTargetId : selectedAgentId)) || null;
   const selectedModel = models.find(model => model.id === (effectiveMode === 'model' ? effectiveTargetId : selectedModelId)) || null;
   const selectedCatalogModel = catalogModels.find(model => model.id === (effectiveMode === 'model' ? effectiveTargetId : selectedModelId)) || null;
@@ -263,7 +268,10 @@ export const ChatPage = () => {
   const temporaryReady = Boolean(effectiveTemporaryProvider && effectiveTemporaryModelId.trim() && temporaryApiKey.trim());
   const temporaryLabel = activeTemporaryModel?.name || (effectiveTemporaryModelId.trim() ? `${effectiveTemporaryModelId.trim()} · temporal` : 'Modelo temporal');
   const filteredAgents = agents.filter(agent => normalizeCommand(agent.name).includes(normalizeCommand(targetSearch)));
-  const filteredModels = catalogModels.filter(model => normalizeCommand(`${model.name} ${model.id}`).includes(normalizeCommand(targetSearch)));
+  const filteredModels = catalogModels.filter(model => {
+    const imageCapable = (model.outputModalities || []).includes('image') || /flux|imagen|stable[ ._-]?diffusion|sdxl|image[ ._-]?generation|dall[ ._-]?e|nano[ ._-]?banana|kandinsky|playground/i.test(`${model.name} ${model.id}`);
+    return (!imageMode || imageCapable) && normalizeCommand(`${model.name} ${model.id}`).includes(normalizeCommand(targetSearch));
+  });
   const currentMessages = activeConversation?.messages || [];
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, [currentMessages.length, sending]);
 
@@ -277,7 +285,7 @@ export const ChatPage = () => {
   }, [conversations]);
 
   const startNewChat = (agentId = selectedAgentId) => {
-    setActiveConversationId(''); setTargetMode('agent'); setSelectedAgentId(agentId); setSelectedModelId(models[0]?.id || '__temporary__'); setMessage(''); setPendingAttachments([]); setError('');
+    setActiveConversationId(''); setTargetMode('agent'); setImageMode(false); setSelectedAgentId(agentId); setSelectedModelId(models[0]?.id || '__temporary__'); setMessage(''); setPendingAttachments([]); setError('');
     setTimeout(() => textareaRef.current?.focus(), 0);
   };
   const updateConversationTarget = (conversationId: string, mode: 'agent' | 'model', targetId: string, providerId?: string) => {
@@ -455,7 +463,7 @@ ${agents.map(agent => `• $${aliasFor(agent)} — ${agent.name}`).join('\\n')}`
     setConversations(current => current.filter(item => item.id !== id));
     if (activeConversationId === id) setActiveConversationId('');
   };
-  const selectConversation = (item: Conversation) => { setActiveConversationId(item.id); setTargetMode(item.targetMode || 'agent'); setSelectedAgentId(item.agentId); if (item.targetMode === 'model' && item.targetId) { setSelectedModelId(item.targetId); setSelectedProviderId(item.targetProviderId || '');  } setError(''); };
+  const selectConversation = (item: Conversation) => { setActiveConversationId(item.id); setTargetMode(item.targetMode || 'agent'); setImageMode(false); setSelectedAgentId(item.agentId); if (item.targetMode === 'model' && item.targetId) { setSelectedModelId(item.targetId); setSelectedProviderId(item.targetProviderId || '');  } setError(''); };
 
   return <div className="flex -m-4 sm:-m-8 h-[calc(100dvh-64px)] min-h-[520px] overflow-hidden bg-slate-950 text-slate-100">
     {sidebarOpen && <aside className="w-64 shrink-0 border-r border-slate-800 bg-slate-950 flex flex-col max-md:w-[76px]">
@@ -475,10 +483,16 @@ ${agents.map(agent => `• $${aliasFor(agent)} — ${agent.name}`).join('\\n')}`
     <section className="flex min-w-0 flex-1 flex-col">
       <header className="flex min-h-[62px] items-center justify-between gap-3 border-b border-slate-800 px-3 sm:px-5">
         <div className="flex min-w-0 items-center gap-2"><button onClick={() => setSidebarOpen(value => !value)} title={sidebarOpen ? 'Ocultar conversaciones' : 'Mostrar conversaciones'} className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white">{sidebarOpen ? <PanelLeftClose size={18}/> : <PanelLeftOpen size={18}/>}</button><div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-cyan-950 text-cyan-300"><Bot size={17}/></div><div className="min-w-0"><p className="truncate text-sm font-semibold">{activeConversation ? activeConversation.title : 'Nuevo chat'}</p><p className="text-[11px] text-slate-500">Conversaciones separadas por agente o modelo</p></div></div>
-        <div className="flex max-w-[62%] items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-900 p-1.5 sm:gap-2 sm:px-3 sm:py-2">
+        <div className="flex max-w-[78%] items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-900 p-1.5 sm:gap-2 sm:px-3 sm:py-2">
+          <button type="button" title="Buscar modelos para generar imágenes" aria-pressed={imageMode} onClick={() => {
+            const imageModel = catalogModels.find(model => (model.outputModalities || []).includes('image') || /flux|imagen|stable[ ._-]?diffusion|sdxl|image[ ._-]?generation|dall[ ._-]?e|nano[ ._-]?banana|kandinsky|playground/i.test(`${model.name} ${model.id}`));
+            const nextModelId = imageModel?.id || '';
+            setImageMode(true); setTargetMode('model'); setTargetSearch(''); setSelectedModelId(nextModelId); setError('');
+            if (activeConversation) updateConversationTarget(activeConversation.id, 'model', nextModelId, selectedProviderId);
+          }} className={`inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1.5 text-xs transition-colors ${imageMode ? 'bg-violet-600 text-white' : 'text-violet-300 hover:bg-slate-800'}`}><ImageIcon size={15}/><span className="hidden sm:inline">Imágenes</span></button>
           <select aria-label="Tipo de destino" value={activeConversation ? (activeConversation.targetMode || 'agent') : targetMode} onChange={event => {
             const next = event.target.value as 'agent' | 'model';
-            setTargetMode(next); setError('');
+            setTargetMode(next); if (next !== 'model') setImageMode(false); setError('');
             if (activeConversation) {
               const nextId = next === 'agent' ? selectedAgentId : selectedModelId;
               updateConversationTarget(activeConversation.id, next, nextId, selectedProviderId);
