@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { Card } from '../components/Card';
 import { InputField } from '../components/InputField';
 import { ActionButton } from '../components/ActionButton';
-import { subscribeCollection, addData, updateData, deleteData } from '../services/firebase/db';
+import { subscribeCollection, addData, updateData, deleteData, getDocData, getCollectionDataStrict } from '../services/firebase/db';
+import { syncWorkerConfig } from '../services/worker/client';
 import { MessageSquare, Plus, Trash2, Power, ShieldCheck, ExternalLink } from 'lucide-react';
 
 interface TelegramConnection {
@@ -29,6 +30,7 @@ export const TelegramPage = () => {
   const [agentId, setAgentId] = useState('');
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [syncError, setSyncError] = useState('');
 
   useEffect(() => {
     const unsubConns = subscribeCollection('telegramConnections', (data) => {
@@ -45,6 +47,35 @@ export const TelegramPage = () => {
       unsubAgents();
     };
   }, []);
+
+  const syncCurrentConfig = async () => {
+    const workerSettings = await getDocData('appSettings', 'workerConfig');
+    const workerUrl = String(workerSettings?.value || 'https://bot-ia-pc.elherreroanapse.workers.dev').trim().replace(/\/$/, '');
+    if (!workerUrl) throw new Error('No hay una URL de Worker configurada.');
+    const [currentAgents, currentModels, currentConnections] = await Promise.all([
+      getCollectionDataStrict('agents'),
+      getCollectionDataStrict('modelConfigs'),
+      getCollectionDataStrict('telegramConnections'),
+    ]);
+    return syncWorkerConfig(workerUrl, {
+      agents: currentAgents || [],
+      models: currentModels || [],
+      connections: currentConnections || [],
+      syncedAt: new Date().toISOString(),
+    });
+  };
+
+  const syncAfterChange = async () => {
+    try {
+      await syncCurrentConfig();
+      setSyncError('');
+      return true;
+    } catch (err: any) {
+      const message = err?.message || 'No se pudo sincronizar la configuración con el Worker.';
+      setSyncError(`Telegram se guardó en Firebase, pero el Worker no se actualizó: ${message}`);
+      return false;
+    }
+  };
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,6 +95,7 @@ export const TelegramPage = () => {
         status: 'activo',
         createdAt: new Date().toISOString(),
       });
+      await syncAfterChange();
       setName('');
       setBotUsername('');
       setBotToken('');
@@ -78,13 +110,23 @@ export const TelegramPage = () => {
 
   const handleDelete = async (id: string) => {
     if (confirm('¿Eliminar esta conexión de Telegram?')) {
-      await deleteData('telegramConnections', id);
+      try {
+        await deleteData('telegramConnections', id);
+        await syncAfterChange();
+      } catch (err: any) {
+        setSyncError(err?.message || 'No se pudo eliminar la conexión de Telegram.');
+      }
     }
   };
 
   const toggleStatus = async (conn: TelegramConnection) => {
     const nextStatus = conn.status === 'activo' ? 'inactivo' : 'activo';
-    await updateData('telegramConnections', conn.id, { status: nextStatus });
+    try {
+      await updateData('telegramConnections', conn.id, { status: nextStatus });
+      await syncAfterChange();
+    } catch (err: any) {
+      setSyncError(err?.message || 'No se pudo cambiar el estado del bot.');
+    }
   };
 
   const maskToken = (token: string) => {
@@ -104,6 +146,13 @@ export const TelegramPage = () => {
         </div>
         <ActionButton label="Conectar Bot" onClick={() => setIsModalOpen(true)} icon={<Plus size={16} />} />
       </div>
+
+      {syncError && (
+        <div className="p-3 rounded-lg border border-amber-800/60 bg-amber-950/30 text-amber-200 text-sm">
+          {syncError}
+          <button onClick={() => void syncAfterChange()} className="ml-3 underline underline-offset-2 hover:text-white">Reintentar sincronización</button>
+        </div>
+      )}
 
       {loading ? (
         <div className="p-8 text-center text-slate-400">Cargando conexiones desde Firestore...</div>
