@@ -124,8 +124,9 @@ export default {
           const requested = normalizeCommand(argumentWords[0] || '');
           if (!argument || requested === 'list' || requested === 'lista') {
             const lines = activeAgents.map((item: any) => {
-              const label = String(item.name || item.nombre || item.id || 'Agente');
-              return `• ${label} — ${label}`;
+              const label = String(item.name || item.nombre || item.id || 'Agente').trim();
+              const alias = label.split(/\s+/)[0];
+              return `• $${alias} — ${label}`;
             });
             await send(lines.length ? `Agentes disponibles:\n${lines.join('\n')}` : 'No hay agentes activos.');
             return json({ status: 'agent_list' });
@@ -134,10 +135,13 @@ export default {
           let consumedWords = 0;
           for (let count = argumentWords.length; count >= 1; count--) {
             const candidate = argumentWords.slice(0, count).join(' ');
-            found = activeAgents.find((item: any) =>
-              normalizeCommand(String(item.name || item.nombre || '')) === normalizeCommand(candidate) ||
-              normalizeCommand(String(item.id || '')) === normalizeCommand(candidate)
-            );
+            found = activeAgents.find((item: any) => {
+              const label = String(item.name || item.nombre || '').trim();
+              const alias = label.split(/\s+/)[0];
+              return normalizeCommand(alias) === normalizeCommand(candidate) ||
+                normalizeCommand(label) === normalizeCommand(candidate) ||
+                normalizeCommand(String(item.id || '')) === normalizeCommand(candidate);
+            });
             if (found) { consumedWords = count; break; }
           }
           if (!found) {
@@ -160,10 +164,13 @@ export default {
           let consumedWords = 0;
           for (let count = words.length; count >= 1; count--) {
             const candidate = words.slice(0, count).join(' ');
-            directAgent = activeAgents.find((item: any) =>
-              normalizeCommand(String(item.name || item.nombre || '')) === normalizeCommand(candidate) ||
-              normalizeCommand(String(item.id || '')) === normalizeCommand(candidate)
-            );
+            directAgent = activeAgents.find((item: any) => {
+              const label = String(item.name || item.nombre || '').trim();
+              const alias = label.split(/\s+/)[0];
+              return normalizeCommand(alias) === normalizeCommand(candidate) ||
+                normalizeCommand(label) === normalizeCommand(candidate) ||
+                normalizeCommand(String(item.id || '')) === normalizeCommand(candidate);
+            });
             if (directAgent) {
               consumedWords = count;
               break;
