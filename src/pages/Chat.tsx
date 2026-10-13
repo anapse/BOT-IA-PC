@@ -237,7 +237,7 @@ export const ChatPage = () => {
       setCatalogLoading(false);
       setError(providers.length ? 'Selecciona un proveedor activo.' : 'No hay proveedores activos guardados.');
     }
-  }, [targetMode, selectedProviderId, providers]);
+  }, [targetMode, selectedProviderId, providers, imageMode]);
 
   useEffect(() => {
     // Keep conversation history lightweight: file bytes stay in memory, not localStorage.
