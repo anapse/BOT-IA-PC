@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Bot, Plus, Send, PanelLeftClose, PanelLeftOpen, MessageSquare, Trash2, Sparkles, ChevronDown, LoaderCircle, UserRound, AlertCircle, Image as ImageIcon, Mic, Video, Paperclip, X, FileText, FileAudio, FileVideo } from 'lucide-react';
+import { Bot, Plus, Send, PanelLeftClose, PanelLeftOpen, MessageSquare, Trash2, Sparkles, ChevronDown, LoaderCircle, UserRound, AlertCircle, Image as ImageIcon, Mic, Video, Paperclip, X, FileText } from 'lucide-react';
 import { subscribeCollection, getDocData } from '../services/firebase/db';
 import { sendAgentChatMessage, fetchProviderCatalog, type ChatFileAttachment, type ChatOutputAttachment } from '../services/worker/client';
 
