@@ -122,23 +122,22 @@ export default {
         if (command === 'agente' || command === 'agent') {
           const subcommand = normalizeCommand(argument.split(/\s+/)[0] || '');
           if (!argument || subcommand === 'list' || subcommand === 'lista') {
-            const lines = activeAgents.map((item: any, index: number) => {
+            const lines = activeAgents.map((item: any) => {
               const label = String(item.name || item.nombre || item.id || 'Agente');
-              const alias = normalizeCommand(label) || normalizeCommand(String(item.id || ''));
-              const description = String(item.description || '').trim();
-              return `${index + 1}. ${label} — ${alias}${description ? `\\n   ${description.slice(0, 120)}` : ''}`;
+              const alias = normalizeCommand(String(item.id || item.name || item.nombre || ''));
+              return `• ${label} — ${alias}`;
             });
-            await send(lines.length ? `🤖 Agentes disponibles:\\n\\n${lines.join('\\n')}\\n\\nUsa $agente nombre para seleccionarlo o $nombre tu mensaje para consultarlo directamente.` : 'No hay agentes activos. Activa o crea uno desde BOT IA PC.');
+            await send(lines.length ? `Agentes disponibles:\n${lines.join('\n')}` : 'No hay agentes activos.');
             return json({ status: 'agent_list' });
           }
           const requested = normalizeCommand(argument);
           const found = activeAgents.find((item: any) => normalizeCommand(String(item.name || item.nombre || '')) === requested || normalizeCommand(String(item.id || '')) === requested);
           if (!found) {
-            await send(`No encontré el agente "${argument}". Escribe $agente list para ver los nombres disponibles.`);
+            await send('Agente no disponible.');
             return json({ status: 'agent_not_found' });
           }
           await env.WORKER_KV.put(stateKey, String(found.id));
-          await send(`✅ Agente seleccionado: ${found.name || found.id}.\\nAhora puedes escribirme normalmente o usar ${normalizeCommand(String(found.name || found.id))} mensaje para llamarlo directamente.`);
+          await send(`Seleccionado: ${found.name || found.id}`);
           return json({ status: 'agent_selected', agentId: found.id });
         }
         const directAgent = activeAgents.find((item: any) => normalizeCommand(String(item.name || item.nombre || '')) === command || normalizeCommand(String(item.id || '')) === command);
