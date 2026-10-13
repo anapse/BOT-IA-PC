@@ -95,12 +95,16 @@ export const ChatPage = () => {
     let outgoingText = rawText;
     let mode: 'agent' | 'model' = activeConversation?.targetMode || targetMode;
     let targetId = activeConversation?.targetId || activeConversation?.agentId || (mode === 'agent' ? selectedAgentId : selectedModelId);
-    const useTemporaryModel = mode === 'model' && (Boolean(activeConversation?.temporaryModel) || (!activeConversation && selectedModelId === '__temporary__'));\n    const temporaryModel = useTemporaryModel ? (activeConversation?.temporaryModel || { provider: temporaryProvider, modelId: temporaryModelId.trim(), name: `${temporaryModelId.trim()} · temporal` }) : undefined;\n    if (useTemporaryModel) targetId = `temp:${temporaryModel!.provider}:${temporaryModel!.modelId}`;
+    const useTemporaryModel = mode === 'model' && (Boolean(activeConversation?.temporaryModel) || (!activeConversation && selectedModelId === '__temporary__'));
+    const temporaryModel = useTemporaryModel ? (activeConversation?.temporaryModel || { provider: temporaryProvider, modelId: temporaryModelId.trim(), name: `${temporaryModelId.trim()} · temporal` }) : undefined;
+    if (useTemporaryModel) targetId = `temp:${temporaryModel!.provider}:${temporaryModel!.modelId}`;
     let localReply = '';
 
     if (/^\$agente\s+list\s*$/i.test(rawText)) {
       localReply = agents.length
-        ? `Agentes disponibles:\n${agents.map(agent => `• $${aliasFor(agent)} — ${agent.name}`).join('\n')}`
+        ? `Agentes disponibles:
+${agents.map(agent => `• $${aliasFor(agent)} — ${agent.name}`).join('
+')}`
         : 'No hay agentes activos disponibles.';
     } else {
       const generalCommand = rawText.match(/^\$agente\s+([\s\S]+)$/i);
