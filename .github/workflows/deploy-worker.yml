@@ -1,4 +1,4 @@
-name: Deploy Worker
+name: Test Worker
 on:
   push:
     branches:
@@ -7,7 +7,7 @@ on:
       - 'cloudflare-worker/**'
       - '.github/workflows/deploy-worker.yml'
 jobs:
-  deploy:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,8 +19,3 @@ jobs:
         run: cd cloudflare-worker && npm install
       - name: Run tests
         run: cd cloudflare-worker && npm test
-      - name: Deploy
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          workingDirectory: cloudflare-worker
