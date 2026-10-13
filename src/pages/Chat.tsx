@@ -16,21 +16,28 @@ const aliasFor = (agent: Agent) => normalizeCommand(agent.name).split(' ')[0];
 const STORAGE_KEY = 'bot-ia-pc-chat-conversations-v1';
 const makeId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
-// Preview SVG snippets from text models without executing embedded scripts.
-const normalizeSvg = (value: string) => value
-  .replace(/\\</g, '<')
-  .replace(/\\>/g, '>')
-  .replace(/\\(["'])/g, '$1')
-  .replace(/<script\b[\s\S]*?<\/script\s*>/gi, '')
-  .replace(/<(foreignObject|iframe|object|embed)\b[\s\S]*?<\/\1\s*>/gi, '')
-  .replace(/\s on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
-  .replace(/\s(?:href|xlink:href)\s*=\s*("https?:[^"]*"|'https?:[^']*')/gi, '');
+// Preview SVG snippets from text models, including common escaped/malformed output.
+const normalizeSvg = (value: string) => {
+  let svg = value
+    .replace(/\\([<>\x60])/g, '$1')
+    .replace(/\\(["'])/g, '$1')
+    .replace(/xmlns\s*=\s*["']\[?(https?:\/\/www\.w3\.org\/2000\/svg)\]?\((https?:\/\/www\.w3\.org\/2000\/svg)\)["']/gi, 'xmlns="http://www.w3.org/2000/svg"')
+    .replace(/^\s*--\s+(.+?)\s+-->\s*$/gm, '<!-- $1 -->')
+    .replace(/<script\b[\s\S]*?<\/script\s*>/gi, '')
+    .replace(/<(foreignObject|iframe|object|embed)\b[\s\S]*?<\/\1\s*>/gi, '')
+    .replace(/\s on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+    .replace(/\s(?:href|xlink:href)\s*=\s*("https?:[^"]*"|'https?:[^']*')/gi, '');
+  const svgStart = svg.search(/<svg\b/i);
+  if (svgStart > 0) svg = svg.slice(svgStart);
+  if (/<svg\b/i.test(svg) && !/<\/svg\s*>/i.test(svg)) svg += '\n</svg>';
+  return svg;
+};
 
 const SvgPreview = ({ source }: { source: string }) => {
   const [visible, setVisible] = useState(false);
   const [imageError, setImageError] = useState(false);
   const svg = normalizeSvg(source.trim());
-  const src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  const src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
 
   return <div className="my-3 max-w-full">
     <button type="button" onClick={() => { setVisible(value => !value); setImageError(false); }} className="inline-flex items-center gap-2 rounded-lg border border-cyan-800 bg-cyan-950/50 px-3 py-2 text-xs font-medium text-cyan-300 transition-colors hover:bg-cyan-900/60">
@@ -43,7 +50,7 @@ const SvgPreview = ({ source }: { source: string }) => {
       </div>
       <div className="flex min-h-48 items-center justify-center p-4" style={{ backgroundColor: '#111827', backgroundImage: 'linear-gradient(45deg, #1f2937 25%, transparent 25%), linear-gradient(-45deg, #1f2937 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #1f2937 75%), linear-gradient(-45deg, transparent 75%, #1f2937 75%)', backgroundSize: '24px 24px', backgroundPosition: '0 0, 0 12px, 12px -12px, -12px 0' }}>
         {imageError
-          ? <p className="max-w-md text-center text-xs leading-5 text-amber-300">No se pudo representar el SVG. Puede que el código esté incompleto o tenga errores de sintaxis.</p>
+          ? <p className="max-w-md text-center text-xs leading-5 text-amber-300">No se pudo representar este SVG. Se intentó corregir el formato, pero el código puede estar incompleto o mal formado.</p>
           : <img src={src} alt="Vista previa del SVG generado" onError={() => setImageError(true)} className="max-h-[560px] max-w-full object-contain" />}
       </div>
     </div>}
@@ -51,32 +58,34 @@ const SvgPreview = ({ source }: { source: string }) => {
 };
 
 const MessageContent = ({ content }: { content: string }) => {
-  const pattern = /(```(?:svg|xml|html)?[ \t]*\n?[\s\S]*?```|(?:\\<|<)svg\b[\s\S]*?(?:\\<\/svg>|<\/svg>)|!\[([^\]]*)\]\((https?:\/\/[^\s)]+|data:image\/[^\s)]+)\))/gi;
+  // Some models escape every backtick and angle bracket; normalize those before parsing.
+  const displayContent = content.replace(/\\\x60/g, '\x60').replace(/\\</g, '<').replace(/\\>/g, '>');
+  const pattern = /(\x60{3}(?:svg|xml|html)?[ \t]*\n?[\s\S]*?(?:\x60{3}|$)|<svg\b[\s\S]*?(?:<\/svg\s*>|$)|!\[([^\]]*)\]\((https?:\/\/[^\s)]+|data:image\/[^\s)]+)\))/gi;
   const parts: React.ReactNode[] = [];
   let cursor = 0;
   let match: RegExpExecArray | null;
   let tokenIndex = 0;
 
-  while ((match = pattern.exec(content)) !== null) {
+  while ((match = pattern.exec(displayContent)) !== null) {
     const token = match[0];
     if (match.index > cursor) {
-      parts.push(<span key={`text-${cursor}`} className="whitespace-pre-wrap break-words">{content.slice(cursor, match.index)}</span>);
+      parts.push(<span key={'text-' + cursor} className="whitespace-pre-wrap break-words">{displayContent.slice(cursor, match.index)}</span>);
     }
 
-    if (token.startsWith('```')) {
-      const body = token.replace(/^```(?:svg|xml|html)?[ \t]*\n?/, '').replace(/```$/, '').trim();
+    if (token.startsWith('\x60\x60\x60')) {
+      const body = token.replace(/^\x60{3}(?:svg|xml|html)?[ \t]*\n?/, '').replace(/\x60{3}$/, '').trim();
       const normalizedBody = normalizeSvg(body);
-      if (/<svg\b/i.test(normalizedBody) && /<\/svg\s*>/i.test(normalizedBody)) {
-        parts.push(<SvgPreview key={`svg-${tokenIndex++}`} source={normalizedBody} />);
+      if (/<svg\b/i.test(normalizedBody)) {
+        parts.push(<SvgPreview key={'svg-' + tokenIndex++} source={normalizedBody} />);
       } else {
-        parts.push(<span key={`code-${tokenIndex++}`} className="whitespace-pre-wrap break-words">{token}</span>);
+        parts.push(<span key={'code-' + tokenIndex++} className="whitespace-pre-wrap break-words">{token}</span>);
       }
-    } else if (/<svg\b/i.test(normalizeSvg(token)) && /<\/svg\s*>/i.test(normalizeSvg(token))) {
-      parts.push(<SvgPreview key={`svg-${tokenIndex++}`} source={token} />);
+    } else if (/<svg\b/i.test(token)) {
+      parts.push(<SvgPreview key={'svg-' + tokenIndex++} source={token} />);
     } else {
       const alt = match[2]?.trim() || 'Imagen generada';
       const src = match[3];
-      parts.push(<figure key={`image-${tokenIndex++}`} className="my-3 max-w-full">
+      parts.push(<figure key={'image-' + tokenIndex++} className="my-3 max-w-full">
         <img src={src} alt={alt} loading="lazy" className="max-h-[560px] max-w-full rounded-xl border border-slate-700 bg-slate-900 object-contain" />
         {alt !== 'Imagen generada' && <figcaption className="mt-1 text-xs text-slate-500">{alt}</figcaption>}
       </figure>);
@@ -84,10 +93,10 @@ const MessageContent = ({ content }: { content: string }) => {
     cursor = pattern.lastIndex;
   }
 
-  if (cursor < content.length) {
-    parts.push(<span key={`text-${cursor}`} className="whitespace-pre-wrap break-words">{content.slice(cursor)}</span>);
+  if (cursor < displayContent.length) {
+    parts.push(<span key={'text-' + cursor} className="whitespace-pre-wrap break-words">{displayContent.slice(cursor)}</span>);
   }
-  return parts.length ? <>{parts}</> : content;
+  return parts.length ? <>{parts}</> : displayContent;
 };
 const readConversations = (): Conversation[] => {
   try { const value = localStorage.getItem(STORAGE_KEY); return value ? JSON.parse(value) : []; }
