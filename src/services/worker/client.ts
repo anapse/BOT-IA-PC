@@ -73,13 +73,13 @@ export const readWorkerConfig = async (workerUrl: string) => {
   return await response.json();
 };
 
-export const sendAgentChatMessage = async (workerUrl: string, agentId: string, message: string): Promise<{ reply: string; model: string }> => {
+export const sendAgentChatMessage = async (workerUrl: string, agentId: string, message: string, history: Array<{ role: 'user' | 'assistant'; content: string }> = []): Promise<{ reply: string; model: string }> => {
   const token = await getAdminToken();
   const baseUrl = workerUrl.replace(/\/$/, '');
   const response = await fetch(`${baseUrl}/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ agentId, message }),
+    body: JSON.stringify({ agentId, message, history }),
   });
   const result = await response.json().catch(() => ({} as any));
   if (!response.ok) throw new Error(typeof result?.error === 'string' ? result.error : `Error del Worker (HTTP ${response.status})`);
