@@ -4,7 +4,7 @@ import { InputField } from '../components/InputField';
 import { ActionButton } from '../components/ActionButton';
 import { subscribeCollection, addData, updateData, deleteData, getDocData, getCollectionDataStrict } from '../services/firebase/db';
 import { syncWorkerConfig } from '../services/worker/client';
-import { MessageSquare, Plus, Trash2, Power, ShieldCheck, Pencil } from 'lucide-react';
+import { MessageSquare, Plus, Trash2, Power, ShieldCheck, Pencil, X } from 'lucide-react';
 
 interface TelegramConnection {
   id: string;
@@ -12,6 +12,8 @@ interface TelegramConnection {
   botUsername?: string;
   botToken: string;
   agentId?: string;
+  agentIds?: string[];
+  allowedUsers?: string[];
   webhookUrl?: string;
   status: 'activo' | 'inactivo';
   createdAt: string;
@@ -29,6 +31,8 @@ export const TelegramPage = () => {
   const [botUsername, setBotUsername] = useState('');
   const [botToken, setBotToken] = useState('');
   const [agentId, setAgentId] = useState('');
+  const [agentIds, setAgentIds] = useState<string[]>([]);
+  const [allowedUsersText, setAllowedUsersText] = useState('');
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [syncError, setSyncError] = useState('');
@@ -83,6 +87,8 @@ export const TelegramPage = () => {
     setBotUsername('');
     setBotToken('');
     setAgentId('');
+    setAgentIds([]);
+    setAllowedUsersText('');
     setEditingConnection(null);
     setErrorMsg('');
   };
@@ -98,8 +104,16 @@ export const TelegramPage = () => {
     setBotUsername(conn.botUsername || '');
     setBotToken('');
     setAgentId(conn.agentId || '');
+    setAgentIds(Array.isArray(conn.agentIds) ? conn.agentIds : (conn.agentId ? [conn.agentId] : []));
+    setAllowedUsersText(Array.isArray(conn.allowedUsers) ? conn.allowedUsers.join(', ') : '');
     setErrorMsg('');
     setIsModalOpen(true);
+  };
+
+  const parseAllowedUsers = (value: string) => [...new Set(value.split(/[\\n,;]+/).map((user) => user.trim().replace(/^@/, '').toLowerCase()).filter(Boolean))];
+
+  const toggleAgent = (id: string) => {
+    setAgentIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -115,7 +129,9 @@ export const TelegramPage = () => {
         const changes: Partial<TelegramConnection> = {
           name: name.trim(),
           botUsername: botUsername.trim(),
-          agentId: agentId || '',
+          agentId: agentIds[0] || agentId || '',
+          agentIds,
+          allowedUsers: parseAllowedUsers(allowedUsersText),
         };
         if (botToken.trim()) changes.botToken = botToken.trim();
         await updateData('telegramConnections', editingConnection.id, changes);
@@ -124,7 +140,9 @@ export const TelegramPage = () => {
           name: name.trim(),
           botUsername: botUsername.trim(),
           botToken: botToken.trim(),
-          agentId: agentId || (agents[0]?.id || ''),
+          agentId: agentIds[0] || agentId || (agents[0]?.id || ''),
+          agentIds: agentIds.length ? agentIds : (agentId ? [agentId] : (agents[0]?.id ? [agents[0].id] : [])),
+          allowedUsers: parseAllowedUsers(allowedUsersText),
           status: 'activo',
           createdAt: new Date().toISOString(),
         });
@@ -310,18 +328,39 @@ export const TelegramPage = () => {
                 isSecret
               />
 
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <label className="text-xs font-medium text-slate-300">Agentes disponibles para este bot</label>
+                  <span className="text-xs text-cyan-300">{agentIds.length} seleccionados</span>
+                </div>
+                <p className="text-xs text-slate-500">Selecciona uno o varios agentes. En Telegram podrán elegirse con $agente list.</p>
+                {agents.length === 0 ? (
+                  <p className="text-xs text-amber-300 rounded-lg border border-amber-900/60 p-3">Primero crea agentes en la sección Agentes.</p>
+                ) : (
+                  <div className="max-h-40 overflow-y-auto space-y-1 rounded-lg border border-slate-800 bg-slate-950 p-2">
+                    {agents.map((a) => (
+                      <label key={a.id} className="flex items-center gap-2 p-2 rounded hover:bg-slate-900 cursor-pointer">
+                        <input type="checkbox" checked={agentIds.includes(a.id)} onChange={() => toggleAgent(a.id)} className="accent-cyan-500" />
+                        <span className="text-sm text-slate-200">{a.name}</span>
+                        <span className="ml-auto text-xs text-slate-500">{a.model || ""}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+                {agentIds.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {agentIds.map((id) => {
+                      const selected = agents.find((a) => a.id === id);
+                      return selected ? <span key={id} className="inline-flex items-center gap-1 rounded-full bg-cyan-950/60 border border-cyan-800/50 px-2 py-1 text-xs text-cyan-200">{selected.name}<button type="button" onClick={() => toggleAgent(id)} aria-label={"Quitar " + selected.name}><X size={12} /></button></span> : null;
+                    })}
+                  </div>
+                )}
+              </div>
+
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-300">Asignar a Agente</label>
-                <select
-                  value={agentId}
-                  onChange={(e) => setAgentId(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-sm text-slate-200 focus:outline-none focus:border-cyan-500"
-                >
-                  <option value="">Selecciona un agente...</option>
-                  {agents.map((a) => (
-                    <option key={a.id} value={a.id}>{a.name} ({a.model})</option>
-                  ))}
-                </select>
+                <label className="text-xs font-medium text-slate-300">Usuarios permitidos (opcional)</label>
+                <textarea value={allowedUsersText} onChange={(e) => setAllowedUsersText(e.target.value)} rows={3} placeholder={"Ej. @usuario1, 123456789\nPuedes separar usuarios por comas o líneas"} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-cyan-500" />
+                <p className="text-xs text-slate-500">Déjalo vacío para que cualquiera pueda usar el bot. Admite nombres de usuario de Telegram (@usuario) o IDs numéricos.</p>
               </div>
 
               <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
