@@ -775,9 +775,10 @@ export default {
             // NVIDIA's FLUX.2 Klein endpoint accepts only four steps and uses
             // the exact "Image Generation" mode; FLUX.1 models use different limits.
             const isFlux2Klein = /(?:^|\/)flux\.2-klein-4b$/i.test(modelSlug);
+            const isFlux1Schnell = /flux\.1-schnell/i.test(modelSlug);
             const imagePayload = isFlux2Klein
               ? { prompt: message, mode: 'Image Generation', width: 1024, height: 1024, steps: 4, cfg_scale: 0, samples: 1, seed: 0 }
-              : { prompt: message, mode: /flux\.1-schnell/i.test(modelSlug) ? 'base' : 'base', width: 1024, height: 1024, steps: /flux\.1-schnell/i.test(modelSlug) ? 4 : 25, cfg_scale: /flux\.1-schnell/i.test(modelSlug) ? 0 : 3.5, samples: 1, seed: 0 };
+              : { prompt: message, mode: 'base', width: 1024, height: 1024, steps: isFlux1Schnell ? 4 : 25, cfg_scale: isFlux1Schnell ? 0 : 3.5, samples: 1, seed: 0 };
             upstream = await fetch(requestUrl, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
