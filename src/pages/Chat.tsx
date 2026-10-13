@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Bot, Plus, Send, PanelLeftClose, PanelLeftOpen, MessageSquare, Trash2, Sparkles, ChevronDown, LoaderCircle, UserRound, AlertCircle } from 'lucide-react';
 import { subscribeCollection, getDocData, getCollectionDataStrict } from '../services/firebase/db';
-import { sendAgentChatMessage, fetchProviderCatalog, syncWorkerProviders } from '../services/worker/client';
+import { sendAgentChatMessage, fetchProviderCatalog } from '../services/worker/client';
 
 type Agent = { id: string; name: string; description?: string; model?: string; status?: 'activo' | 'inactivo' | 'pausado'; systemPrompt?: string; personality?: string };
 type ModelOption = { id: string; name: string; modelId?: string; provider?: string; connectionType?: 'cloud' | 'local'; status?: 'activo' | 'inactivo'; apiKey?: string };
@@ -54,8 +54,7 @@ export const ChatPage = () => {
     const unsubscribeProviders = subscribeCollection('providers', data => {
       const active = (data as ProviderOption[]).filter(provider => provider.status === 'activo');
       setProviders(active);
-      const nextId = active.some(provider => provider.id === selectedProviderId) ? selectedProviderId : (active[0]?.id || '');
-      setSelectedProviderId(nextId);
+      setSelectedProviderId(current => active.some(provider => provider.id === current) ? current : (active[0]?.id || ''));
 
     });
     const unsubscribeModels = subscribeCollection('modelConfigs', data => {
@@ -81,8 +80,7 @@ export const ChatPage = () => {
       // Firestore contiene la configuración guardada. Actualizamos solo los proveedores en KV
       // antes de consultar el catálogo, sin volver a sincronizar ni tocar los webhooks de Telegram.
       const savedProviders = await getCollectionDataStrict('providers');
-      await syncWorkerProviders(workerUrl, savedProviders);
-      // Usar la instantánea recién leída de Firebase evita depender de la propagación inmediata de KV.
+      // Enviar la configuración guardada junto con la petición del catálogo evita depender de una ruta de sincronización adicional.
       const list = await fetchProviderCatalog(workerUrl, provider.id, savedProviders) as CatalogModel[];
       setCatalogModels(list);
       setSelectedModelId(current => list.some(item => item.id === current) ? current : (list[0]?.id || ''));
