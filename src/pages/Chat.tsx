@@ -77,7 +77,7 @@ export const ChatPage = () => {
       const list = await fetchProviderCatalog(workerUrl, provider.id) as CatalogModel[];
       setCatalogModels(list);
       setSelectedModelId(current => list.some(item => item.id === current) ? current : (list[0]?.id || ''));
-    } catch (e: any) { setError(e?.message || 'No se pudo cargar el catálogo.'); }
+    } catch (e: any) { if (targetMode === 'model') setError(e?.message || 'No se pudo cargar el catálogo.'); }
     finally { setCatalogLoading(false); }
   };
 
@@ -204,7 +204,7 @@ ${agents.map(agent => `• $${aliasFor(agent)} — ${agent.name}`).join('\\n')}`
     setConversations(current => current.filter(item => item.id !== id));
     if (activeConversationId === id) setActiveConversationId('');
   };
-  const selectConversation = (item: Conversation) => { setActiveConversationId(item.id); setTargetMode(item.targetMode || 'agent'); setSelectedAgentId(item.agentId); if (item.targetMode === 'model' && item.targetId) { setSelectedModelId(item.targetId); setSelectedProviderId(item.targetProviderId || ''); if (item.targetProviderId) void refreshProviderModels(item.targetProviderId); } setError(''); };
+  const selectConversation = (item: Conversation) => { setActiveConversationId(item.id); setTargetMode(item.targetMode || 'agent'); setSelectedAgentId(item.agentId); if (item.targetMode === 'model' && item.targetId) { setSelectedModelId(item.targetId); setSelectedProviderId(item.targetProviderId || '');  } setError(''); };
 
   return <div className="flex -m-4 sm:-m-8 h-[calc(100dvh-64px)] min-h-[520px] overflow-hidden bg-slate-950 text-slate-100">
     {sidebarOpen && <aside className="w-64 shrink-0 border-r border-slate-800 bg-slate-950 flex flex-col max-md:w-[76px]">
@@ -232,7 +232,7 @@ ${agents.map(agent => `• $${aliasFor(agent)} — ${agent.name}`).join('\\n')}`
               {loadingAgents ? <option value="">Cargando…</option> : filteredAgents.length ? filteredAgents.map(agent => <option key={agent.id} value={agent.id} className="bg-slate-900">{agent.name}</option>) : <option value="">Sin agentes</option>}
             </select>
           </> : <>
-            <select aria-label="Proveedor" value={effectiveProviderId} onChange={event => { const id = event.target.value; setSelectedProviderId(id); setSelectedModelId(''); setCatalogModels([]); setActiveConversationId(''); setError(''); void refreshProviderModels(id); }} className="min-w-0 max-w-[120px] bg-transparent text-xs text-slate-100 outline-none sm:max-w-[160px] sm:text-sm">
+            <select aria-label="Proveedor" value={effectiveProviderId} onChange={event => { const id = event.target.value; setSelectedProviderId(id); setSelectedModelId(''); setCatalogModels([]); setActiveConversationId(''); setError(''); }} className="min-w-0 max-w-[120px] bg-transparent text-xs text-slate-100 outline-none sm:max-w-[160px] sm:text-sm">
               <option value="">Proveedor…</option>{providers.map(provider => <option key={provider.id} value={provider.id} className="bg-slate-900">{provider.name}</option>)}
             </select>
             <input aria-label="Buscar modelo" value={targetSearch} onChange={event => setTargetSearch(event.target.value)} placeholder={catalogLoading ? 'Cargando…' : 'Buscar modelo…'} className="hidden w-24 min-w-0 bg-transparent text-xs text-slate-200 outline-none placeholder:text-slate-600 sm:block"/>
