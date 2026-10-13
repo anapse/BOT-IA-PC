@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Bot, Plus, Send, PanelLeftClose, PanelLeftOpen, MessageSquare, Trash2, Sparkles, ChevronDown, LoaderCircle, UserRound, AlertCircle } from 'lucide-react';
-import { subscribeCollection, getDocData } from '../services/firebase/db';
-import { sendAgentChatMessage, fetchProviderCatalog } from '../services/worker/client';
+import { subscribeCollection, getDocData, getCollectionDataStrict } from '../services/firebase/db';
+import { sendAgentChatMessage, fetchProviderCatalog, syncWorkerProviders } from '../services/worker/client';
 
 type Agent = { id: string; name: string; description?: string; model?: string; status?: 'activo' | 'inactivo' | 'pausado'; systemPrompt?: string; personality?: string };
 type ModelOption = { id: string; name: string; modelId?: string; provider?: string; connectionType?: 'cloud' | 'local'; status?: 'activo' | 'inactivo'; apiKey?: string };
@@ -71,14 +71,25 @@ export const ChatPage = () => {
 
   const refreshProviderModels = async (id = selectedProviderId) => {
     const provider = providers.find(item => item.id === id);
-    if (!provider) { setCatalogModels([]); return; }
-    setCatalogLoading(true); setError('');
+    if (!provider) {
+      setCatalogModels([]);
+      if (targetMode === 'model') setError(providers.length ? 'Selecciona un proveedor activo.' : 'No hay proveedores activos guardados.');
+      return;
+    }
+    setCatalogLoading(true); setError(''); setCatalogModels([]);
     try {
+      // Firestore contiene la configuración guardada. Actualizamos solo los proveedores en KV
+      // antes de consultar el catálogo, sin volver a sincronizar ni tocar los webhooks de Telegram.
+      const savedProviders = await getCollectionDataStrict('providers');
+      await syncWorkerProviders(workerUrl, savedProviders);
       const list = await fetchProviderCatalog(workerUrl, provider.id) as CatalogModel[];
       setCatalogModels(list);
       setSelectedModelId(current => list.some(item => item.id === current) ? current : (list[0]?.id || ''));
-    } catch (e: any) { if (targetMode === 'model') setError(e?.message || 'No se pudo cargar el catálogo.'); }
-    finally { setCatalogLoading(false); }
+      if (!list.length) setError('El proveedor respondió, pero no ofreció modelos disponibles.');
+    } catch (e: any) {
+      setCatalogModels([]);
+      if (targetMode === 'model') setError(e?.message || 'No se pudo leer la configuración guardada del proveedor.');
+    } finally { setCatalogLoading(false); }
   };
 
   useEffect(() => {
@@ -91,6 +102,10 @@ export const ChatPage = () => {
     }
     if (selectedProviderId && providers.some(provider => provider.id === selectedProviderId)) {
       void refreshProviderModels(selectedProviderId);
+    } else {
+      setCatalogModels([]);
+      setCatalogLoading(false);
+      setError(providers.length ? 'Selecciona un proveedor activo.' : 'No hay proveedores activos guardados.');
     }
   }, [targetMode, selectedProviderId, providers]);
 
