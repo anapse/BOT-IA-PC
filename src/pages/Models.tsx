@@ -61,7 +61,10 @@ export const ModelsPage = () => {
       setCatalogModels(items);
       setCatalogSearch(provider === 'OpenRouter' ? 'free' : '');
       const selected = items.find((item: any) => item.id === modelId);
-      if (!selected) { setModelId(items[0].id); if (!name.trim()) setName(items[0].name); }
+      const preferred = provider === 'OpenRouter'
+        ? items.find((item: any) => `${item.name} ${item.id}`.toLowerCase().includes('free'))
+        : items[0];
+      if (!selected && preferred) { setModelId(preferred.id); if (!name.trim()) setName(preferred.name); }
     } catch (err: any) { setErrorMsg(err.message || 'Error consultando el catálogo.'); }
     finally { setLoadingCatalog(false); }
   };
@@ -264,7 +267,7 @@ export const ModelsPage = () => {
                   <label className="text-xs font-medium text-slate-300">Proveedor</label>
                   <select
                     value={provider}
-                    onChange={(e) => { setProvider(e.target.value); setCatalogModels([]); }}
+                    onChange={(e) => { setProvider(e.target.value); setCatalogModels([]); setCatalogSearch(''); }}
                     className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-sm text-slate-200 focus:outline-none focus:border-cyan-500"
                   >
                     <option value="Google Gemini">Google Gemini</option>
