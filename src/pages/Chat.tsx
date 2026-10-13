@@ -212,9 +212,10 @@ export const ChatPage = () => {
       // Consultar el catálogo con los datos del proveedor elegido evita depender de una sincronización de configuración previa.
       const list = await fetchProviderCatalog(workerUrl, provider) as CatalogModel[];
       setCatalogModels(list);
-      setSelectedModelId(current => imageMode
-        ? (list.find(item => (item.outputModalities || []).includes('image') || /flux|imagen|stable[ ._-]?diffusion|sdxl|image[ ._-]?generation|dall[ ._-]?e|nano[ ._-]?banana|kandinsky|playground/i.test(`${item.name} ${item.id}`))?.id || '')
-        : (list.some(item => item.id === current) ? current : (list[0]?.id || '')));
+      const imageModelId = list.find(item => (item.outputModalities || []).includes('image') || /flux|imagen|stable[ ._-]?diffusion|sdxl|image[ ._-]?generation|dall[ ._-]?e|nano[ ._-]?banana|kandinsky|playground/i.test(`${item.name} ${item.id}`))?.id || '';
+      const nextModelId = imageMode ? imageModelId : (list.some(item => item.id === selectedModelId) ? selectedModelId : (list[0]?.id || ''));
+      setSelectedModelId(nextModelId);
+      if (imageMode && activeConversation) updateConversationTarget(activeConversation.id, 'model', nextModelId, id);
       if (!list.length) setError('El proveedor respondió, pero no ofreció modelos disponibles.');
     } catch (e: any) {
       setCatalogModels([]);
@@ -283,7 +284,7 @@ export const ChatPage = () => {
   }, [conversations]);
 
   const startNewChat = (agentId = selectedAgentId) => {
-    setActiveConversationId(''); setTargetMode('agent'); setSelectedAgentId(agentId); setSelectedModelId(models[0]?.id || '__temporary__'); setMessage(''); setPendingAttachments([]); setError('');
+    setActiveConversationId(''); setTargetMode('agent'); setImageMode(false); setSelectedAgentId(agentId); setSelectedModelId(models[0]?.id || '__temporary__'); setMessage(''); setPendingAttachments([]); setError('');
     setTimeout(() => textareaRef.current?.focus(), 0);
   };
   const updateConversationTarget = (conversationId: string, mode: 'agent' | 'model', targetId: string, providerId?: string) => {
@@ -461,7 +462,7 @@ ${agents.map(agent => `• $${aliasFor(agent)} — ${agent.name}`).join('\\n')}`
     setConversations(current => current.filter(item => item.id !== id));
     if (activeConversationId === id) setActiveConversationId('');
   };
-  const selectConversation = (item: Conversation) => { setActiveConversationId(item.id); setTargetMode(item.targetMode || 'agent'); setSelectedAgentId(item.agentId); if (item.targetMode === 'model' && item.targetId) { setSelectedModelId(item.targetId); setSelectedProviderId(item.targetProviderId || '');  } setError(''); };
+  const selectConversation = (item: Conversation) => { setActiveConversationId(item.id); setTargetMode(item.targetMode || 'agent'); setImageMode(false); setSelectedAgentId(item.agentId); if (item.targetMode === 'model' && item.targetId) { setSelectedModelId(item.targetId); setSelectedProviderId(item.targetProviderId || '');  } setError(''); };
 
   return <div className="flex -m-4 sm:-m-8 h-[calc(100dvh-64px)] min-h-[520px] overflow-hidden bg-slate-950 text-slate-100">
     {sidebarOpen && <aside className="w-64 shrink-0 border-r border-slate-800 bg-slate-950 flex flex-col max-md:w-[76px]">
