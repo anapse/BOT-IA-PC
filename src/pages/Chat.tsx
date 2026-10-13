@@ -103,8 +103,7 @@ export const ChatPage = () => {
     if (/^\$agente\s+list\s*$/i.test(rawText)) {
       localReply = agents.length
         ? `Agentes disponibles:
-${agents.map(agent => `• $${aliasFor(agent)} — ${agent.name}`).join('
-')}`
+${agents.map(agent => `• $${aliasFor(agent)} — ${agent.name}`).join('\\n')}`
         : 'No hay agentes activos disponibles.';
     } else {
       const generalCommand = rawText.match(/^\$agente\s+([\s\S]+)$/i);
