@@ -756,17 +756,32 @@ export default {
             });
           } else if (provider.includes('nvidia') && /(?:flux|stable[-_. ]?diffusion|sdxl|image[-_. ]?generation)/i.test(modelId)) {
             // NVIDIA's image models use the Visual GenAI inference API, not /chat/completions.
-            const modelSlug = modelId.replace(/^models\//i, '').replace(/^nvidia\//i, '').replace(/^\/+|\/+$/g, '');
+            let modelSlug = modelId.replace(/^models\//i, '').replace(/^nvidia\//i, '').replace(/^\/+|\/+$/g, '');
+            // Allow common short IDs as well as NVIDIA's publisher/model IDs.
+            const canonicalImageModels: Record<string, string> = {
+              'flux.2-klein-4b': 'black-forest-labs/flux.2-klein-4b',
+              'flux.1-dev': 'black-forest-labs/flux.1-dev',
+              'flux.1-schnell': 'black-forest-labs/flux.1-schnell',
+              'flux.1-kontext-dev': 'black-forest-labs/flux.1-kontext-dev',
+              'stable-diffusion-3.5-large': 'stability-ai/stable-diffusion-3.5-large',
+            };
+            modelSlug = canonicalImageModels[modelSlug.toLowerCase()] || modelSlug;
             const configuredBase = endpoint.replace(/\/+$/, '');
             const requestUrl = /\/v1\/genai\//i.test(configuredBase)
               ? configuredBase
               : `https://ai.api.nvidia.com/v1/genai/${modelSlug.split('/').map((part: string) => encodeURIComponent(part)).join('/')}`;
             const parsedUrl = new URL(requestUrl);
             if (parsedUrl.protocol !== 'https:') throw new Error('Invalid provider URL protocol');
+            // NVIDIA's FLUX.2 Klein endpoint accepts only four steps and uses
+            // the exact "Image Generation" mode; FLUX.1 models use different limits.
+            const isFlux2Klein = /(?:^|\/)flux\.2-klein-4b$/i.test(modelSlug);
+            const imagePayload = isFlux2Klein
+              ? { prompt: message, mode: 'Image Generation', width: 1024, height: 1024, steps: 4, cfg_scale: 0, samples: 1, seed: 0 }
+              : { prompt: message, mode: /flux\.1-schnell/i.test(modelSlug) ? 'base' : 'base', width: 1024, height: 1024, steps: /flux\.1-schnell/i.test(modelSlug) ? 4 : 25, cfg_scale: /flux\.1-schnell/i.test(modelSlug) ? 0 : 3.5, samples: 1, seed: 0 };
             upstream = await fetch(requestUrl, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-              body: JSON.stringify({ prompt: message, mode: 'base', width: 1024, height: 1024, steps: 25, cfg_scale: 3.5, samples: 1 }),
+              body: JSON.stringify(imagePayload),
               signal: AbortSignal.timeout(90000),
             });
           } else {
