@@ -203,7 +203,10 @@ export default {
       const send = async (text: string) => fetch(`https://api.telegram.org/bot${connection.botToken}/sendMessage`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: chatId, text }) });
       const allAgents = Array.isArray(config.agents) ? config.agents : [];
       const configuredAgentIds = Array.isArray(connection.agentIds) && connection.agentIds.length ? connection.agentIds.map(String) : (connection.agentId ? [String(connection.agentId)] : []);
-      const activeAgents = allAgents.filter((item: any) => !item?.status || item.status === 'activo');
+      // Restrict each Telegram connection to the agents assigned to that bot.
+      const activeAgents = allAgents.filter((item: any) =>
+        (!item?.status || item.status === 'activo') && configuredAgentIds.includes(String(item?.id))
+      );
       const normalizeCommand = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
       const stateKey = `telegram:selected-agent:${String(connection.botToken).slice(-10)}:${String(chatId)}`;
       const commandMatch = message.match(/^\$(\S+)(?:\s+([\s\S]*))?$/);
@@ -285,9 +288,19 @@ export default {
       } else {
         selectedAgentId = String(await env.WORKER_KV.get(stateKey) || '');
       }
-      if (!selectedAgentId) selectedAgentId = String(connection.agentId || '');
+      // Remove stale per-chat selections that are no longer assigned to this bot.
+      if (!activeAgents.some((item: any) => String(item?.id) === selectedAgentId)) {
+        selectedAgentId = '';
+        await env.WORKER_KV.delete(stateKey);
+      }
+      if (!selectedAgentId) {
+        const defaultAgentId = String(connection.agentId || '');
+        selectedAgentId = activeAgents.some((item: any) => String(item?.id) === defaultAgentId)
+          ? defaultAgentId
+          : String(activeAgents[0]?.id || '');
+      }
       message = routedMessage;
-      const agent = allAgents.find((item: any) => item?.id === selectedAgentId) || null;
+      const agent = activeAgents.find((item: any) => String(item?.id) === selectedAgentId) || null;
       if (!agent || (agent.status && agent.status !== 'activo')) {
         await send(!agent ? 'Este bot no tiene un agente válido asignado. Revisa BOT IA PC.' : 'El agente asignado está pausado o inactivo.');
         return json({ status: 'agent_unavailable' });
