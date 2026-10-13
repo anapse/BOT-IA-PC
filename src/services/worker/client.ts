@@ -74,6 +74,8 @@ export const readWorkerConfig = async (workerUrl: string) => {
 };
 
 export type TemporaryModelRequest = { provider: string; modelId: string; apiKey: string };
+export type ChatFileAttachment = { name: string; mimeType: string; data: string };
+export type ChatOutputAttachment = { name: string; mimeType: string; data?: string; url?: string };
 
 export const syncWorkerProviders = async (workerUrl: string, providers: any[]) => {
   const token = await getAdminToken();
@@ -98,16 +100,29 @@ export const fetchProviderCatalog = async (workerUrl: string, provider: { type: 
   return Array.isArray(result?.models) ? result.models : [];
 };
 
-export const sendAgentChatMessage = async (workerUrl: string, targetId: string, message: string, history: Array<{ role: 'user' | 'assistant'; content: string }> = [], mode: 'agent' | 'model' = 'agent', temporaryModel?: TemporaryModelRequest, providerId?: string): Promise<{ reply: string; model: string }> => {
+export const sendAgentChatMessage = async (
+  workerUrl: string,
+  targetId: string,
+  message: string,
+  history: Array<{ role: 'user' | 'assistant'; content: string }> = [],
+  mode: 'agent' | 'model' = 'agent',
+  temporaryModel?: TemporaryModelRequest,
+  providerId?: string,
+  attachments: ChatFileAttachment[] = [],
+): Promise<{ reply: string; model: string; attachments: ChatOutputAttachment[] }> => {
   const token = await getAdminToken();
   const baseUrl = workerUrl.replace(/\/$/, '');
   const response = await fetch(`${baseUrl}/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ mode, targetId, agentId: mode === 'agent' ? targetId : undefined, modelId: mode === 'model' ? targetId : undefined, ...(providerId ? { providerId } : {}), ...(temporaryModel ? { temporaryModel } : {}), message, history }),
+    body: JSON.stringify({ mode, targetId, agentId: mode === 'agent' ? targetId : undefined, modelId: mode === 'model' ? targetId : undefined, ...(providerId ? { providerId } : {}), ...(temporaryModel ? { temporaryModel } : {}), message, history, ...(attachments.length ? { attachments } : {}) }),
   });
   const result = await response.json().catch(() => ({} as any));
   if (!response.ok) throw new Error(typeof result?.error === 'string' ? result.error : `Error del Worker (HTTP ${response.status})`);
-  if (typeof result?.reply !== 'string') throw new Error('La respuesta del Worker no contiene texto.');
-  return { reply: result.reply, model: String(result.model || '') };
+  if (typeof result?.reply !== 'string' && !Array.isArray(result?.attachments)) throw new Error('La respuesta del Worker no contiene contenido compatible.');
+  return {
+    reply: typeof result.reply === 'string' ? result.reply : '',
+    model: String(result.model || ''),
+    attachments: Array.isArray(result.attachments) ? result.attachments : [],
+  };
 }
