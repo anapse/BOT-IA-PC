@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react';
 import { Card } from '../components/Card';
 import { InputField } from '../components/InputField';
 import { ActionButton } from '../components/ActionButton';
-import { subscribeCollection, addData, updateData, deleteData } from '../services/firebase/db';
-import { BrainCircuit, Plus, Trash2, Cpu, Globe, Pencil } from 'lucide-react';
+import { subscribeCollection, addData, updateData, deleteData, getDocData, getCollectionDataStrict } from '../services/firebase/db';
+import { syncWorkerConfig } from '../services/worker/client';
+import { BrainCircuit, Plus, Trash2, Cpu, Globe, Pencil, Circle } from 'lucide-react';
 
 interface ModelConfig {
   id: string;
@@ -15,6 +16,9 @@ interface ModelConfig {
   apiKey?: string;
   status: 'activo' | 'inactivo';
   createdAt: string;
+  workerSyncStatus?: 'synced' | 'error';
+  workerSyncedAt?: string;
+  workerSyncError?: string;
 }
 
 export const ModelsPage = () => {
@@ -40,6 +44,49 @@ export const ModelsPage = () => {
     const search = catalogSearch.trim().toLowerCase();
     return !search || `${item.name} ${item.id}`.toLowerCase().includes(search);
   });
+
+  const syncCurrentConfig = async () => {
+    const workerSettings = await getDocData('appSettings', 'workerConfig');
+    const workerUrl = String(workerSettings?.value || 'https://bot-ia-pc.elherreroanapse.workers.dev').trim().replace(/\\/$/, '');
+    if (!workerUrl) throw new Error('No hay una URL de Worker configurada.');
+
+    const [agents, currentModels, connections] = await Promise.all([
+      getCollectionDataStrict('agents'),
+      getCollectionDataStrict('modelConfigs'),
+      getCollectionDataStrict('telegramConnections'),
+    ]);
+    await syncWorkerConfig(workerUrl, {
+      agents: agents || [],
+      models: currentModels || [],
+      connections: connections || [],
+      syncedAt: new Date().toISOString(),
+    });
+    return new Date().toISOString();
+  };
+
+  const syncModelAndReport = async (modelIdToUpdate: string) => {
+    try {
+      const syncedAt = await syncCurrentConfig();
+      await updateData('modelConfigs', modelIdToUpdate, {
+        workerSyncStatus: 'synced',
+        workerSyncedAt: syncedAt,
+        workerSyncError: '',
+      });
+      return true;
+    } catch (err: any) {
+      const message = err?.message || 'No se pudo sincronizar con el Worker.';
+      try {
+        await updateData('modelConfigs', modelIdToUpdate, {
+          workerSyncStatus: 'error',
+          workerSyncError: message,
+        });
+      } catch {
+        // Keep the original synchronization failure visible in the form.
+      }
+      setErrorMsg(`El modelo se guardó, pero la sincronización falló: ${message}`);
+      return false;
+    }
+  };
 
   useEffect(() => {
     const unsub = subscribeCollection('modelConfigs', (data) => {
@@ -86,15 +133,18 @@ export const ModelsPage = () => {
         endpoint: endpoint.trim(),
         ...(connectionType === 'cloud' && apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
       };
+      let savedModelId = editingModelId;
       if (editingModelId) {
         await updateData('modelConfigs', editingModelId, modelData);
       } else {
-        await addData('modelConfigs', {
+        savedModelId = await addData('modelConfigs', {
           ...modelData,
           status: 'activo',
           createdAt: new Date().toISOString(),
+          workerSyncStatus: undefined,
         });
       }
+      if (savedModelId) await syncModelAndReport(savedModelId);
       setName('');
       setProvider('Google Gemini');
       setModelId('gemini-1.5-pro');
@@ -137,12 +187,18 @@ export const ModelsPage = () => {
   const handleDelete = async (id: string) => {
     if (confirm('¿Eliminar esta configuración de modelo?')) {
       await deleteData('modelConfigs', id);
+      try {
+        await syncCurrentConfig();
+      } catch (err: any) {
+        setErrorMsg(`Modelo eliminado, pero la sincronización falló: ${err?.message || 'Error desconocido'}`);
+      }
     }
   };
 
   const toggleStatus = async (model: ModelConfig) => {
     const nextStatus = model.status === 'activo' ? 'inactivo' : 'activo';
-    await updateData('modelConfigs', model.id, { status: nextStatus });
+    await updateData('modelConfigs', model.id, { status: nextStatus, workerSyncStatus: undefined });
+    await syncModelAndReport(model.id);
   };
 
   return (
@@ -182,7 +238,32 @@ export const ModelsPage = () => {
                       {m.connectionType === 'local' ? <Cpu size={20} /> : <Globe size={20} />}
                     </span>
                     <div>
-                      <h3 className="font-semibold text-slate-100 text-sm">{m.name}</h3>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-semibold text-slate-100 text-sm">{m.name}</h3>
+                        <span
+                          title={
+                            m.workerSyncStatus === 'synced'
+                              ? `Sincronizado con el Worker${m.workerSyncedAt ? ` · ${new Date(m.workerSyncedAt).toLocaleString()}` : ''}`
+                              : m.workerSyncStatus === 'error'
+                                ? `Error de sincronización: ${m.workerSyncError || 'No se pudo sincronizar'}`
+                                : 'Sin sincronizar con el Worker'
+                          }
+                          aria-label={m.workerSyncStatus === 'synced' ? 'Sincronizado' : m.workerSyncStatus === 'error' ? 'Error de sincronización' : 'Sin sincronizar'}
+                          className="inline-flex cursor-help"
+                        >
+                          <Circle
+                            size={10}
+                            fill="currentColor"
+                            className={
+                              m.workerSyncStatus === 'synced'
+                                ? 'text-emerald-400'
+                                : m.workerSyncStatus === 'error'
+                                  ? 'text-red-400'
+                                  : 'text-slate-500'
+                            }
+                          />
+                        </span>
+                      </div>
                       <p className="text-xs text-slate-400">{m.provider}</p>
                     </div>
                   </div>
