@@ -75,13 +75,13 @@ export const readWorkerConfig = async (workerUrl: string) => {
 
 export type TemporaryModelRequest = { provider: string; modelId: string; apiKey: string };
 
-export const sendAgentChatMessage = async (workerUrl: string, targetId: string, message: string, history: Array<{ role: 'user' | 'assistant'; content: string }> = [], mode: 'agent' | 'model' = 'agent', temporaryModel?: TemporaryModelRequest): Promise<{ reply: string; model: string }> => {
+export const sendAgentChatMessage = async (workerUrl: string, targetId: string, message: string, history: Array<{ role: 'user' | 'assistant'; content: string }> = [], mode: 'agent' | 'model' = 'agent', temporaryModel?: TemporaryModelRequest, providerId?: string): Promise<{ reply: string; model: string }> => {
   const token = await getAdminToken();
   const baseUrl = workerUrl.replace(/\/$/, '');
   const response = await fetch(`${baseUrl}/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ mode, targetId, agentId: mode === 'agent' ? targetId : undefined, modelId: mode === 'model' ? targetId : undefined, ...(temporaryModel ? { temporaryModel } : {}), message, history }),
+    body: JSON.stringify({ mode, targetId, agentId: mode === 'agent' ? targetId : undefined, modelId: mode === 'model' ? targetId : undefined, ...(providerId ? { providerId } : {}), ...(temporaryModel ? { temporaryModel } : {}), message, history }),
   });
   const result = await response.json().catch(() => ({} as any));
   if (!response.ok) throw new Error(typeof result?.error === 'string' ? result.error : `Error del Worker (HTTP ${response.status})`);
