@@ -9,7 +9,7 @@ type ProviderOption = { id: string; name: string; type: string; endpoint?: strin
 type CatalogModel = { id: string; name: string };
 type ChatMessage = { id: string; role: 'user' | 'assistant'; content: string; createdAt: string; model?: string };
 type TemporaryModel = { provider: string; modelId: string; name: string };
-type Conversation = { id: string; title: string; agentId: string; targetMode?: 'agent' | 'model'; targetId?: string; temporaryModel?: TemporaryModel; messages: ChatMessage[]; updatedAt: string };
+type Conversation = { id: string; title: string; agentId: string; targetMode?: 'agent' | 'model'; targetId?: string; targetProviderId?: string; temporaryModel?: TemporaryModel; messages: ChatMessage[]; updatedAt: string };
 const normalizeCommand = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim().replace(/\s+/g, ' ');
 const aliasFor = (agent: Agent) => normalizeCommand(agent.name).split(' ')[0];
 const STORAGE_KEY = 'bot-ia-pc-chat-conversations-v1';
@@ -67,12 +67,32 @@ export const ChatPage = () => {
     return () => { unsubscribe(); unsubscribeModels(); unsubscribeProviders(); };
   }, []);
 
+  const refreshProviderModels = async (id = selectedProviderId) => {
+    const provider = providers.find(item => item.id === id);
+    if (!provider) { setCatalogModels([]); return; }
+    if (!provider.apiKey) { setError('Este proveedor no tiene API key disponible. Abre Proveedores y vuelve a guardarla.'); return; }
+    setCatalogLoading(true); setError('');
+    try {
+      const response = await fetch(workerUrl + '/models/catalog', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: provider.type, endpoint: provider.endpoint, apiKey: provider.apiKey })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'No se pudo consultar el catálogo.');
+      const list = Array.isArray(result.models) ? result.models as CatalogModel[] : [];
+      setCatalogModels(list);
+      setSelectedModelId(current => list.some(item => item.id === current) ? current : (list[0]?.id || ''));
+    } catch (e: any) { setError(e?.message || 'No se pudo cargar el catálogo.'); }
+    finally { setCatalogLoading(false); }
+  };
+
   useEffect(() => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations)); } catch { /* storage unavailable */ } }, [conversations]);
   const activeConversation = conversations.find(item => item.id === activeConversationId) || null;
   const effectiveMode: 'agent' | 'model' = activeConversation?.targetMode || targetMode;
   const effectiveTargetId = activeConversation?.targetId || activeConversation?.agentId || selectedAgentId;
   const selectedAgent = agents.find(agent => agent.id === (effectiveMode === 'agent' ? effectiveTargetId : selectedAgentId)) || null;
   const selectedModel = models.find(model => model.id === (effectiveMode === 'model' ? effectiveTargetId : selectedModelId)) || null;
+  const effectiveProviderId = activeConversation?.targetProviderId || selectedProviderId;
   const activeTemporaryModel = activeConversation?.temporaryModel || null;
   const temporarySelected = effectiveMode === 'model' && (Boolean(activeTemporaryModel) || (!activeConversation && selectedModelId === '__temporary__'));
   const effectiveTemporaryProvider = activeTemporaryModel?.provider || temporaryProvider;
@@ -80,7 +100,7 @@ export const ChatPage = () => {
   const temporaryReady = Boolean(effectiveTemporaryProvider && effectiveTemporaryModelId.trim() && temporaryApiKey.trim());
   const temporaryLabel = activeTemporaryModel?.name || (effectiveTemporaryModelId.trim() ? `${effectiveTemporaryModelId.trim()} · temporal` : 'Modelo temporal');
   const filteredAgents = agents.filter(agent => normalizeCommand(agent.name).includes(normalizeCommand(targetSearch)));
-  const filteredModels = models.filter(model => normalizeCommand(`${model.name} ${model.modelId || ''} ${model.provider || ''}`).includes(normalizeCommand(targetSearch)));
+  const filteredModels = catalogModels.filter(model => normalizeCommand(`${model.name} ${model.id}`).includes(normalizeCommand(targetSearch)));
   const currentMessages = activeConversation?.messages || [];
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, [currentMessages.length, sending]);
 
