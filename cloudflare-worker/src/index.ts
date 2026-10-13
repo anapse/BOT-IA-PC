@@ -225,12 +225,12 @@ export default {
           aiResponse = await fetch(model.endpoint?.trim() || defaultEndpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${model.apiKey}`, ...(isOpenRouter ? { 'HTTP-Referer': 'https://anapse.github.io/BOT-IA-PC/', 'X-OpenRouter-Title': 'BOT IA PC' } : {}) },
-            body: JSON.stringify({ model: modelId, messages: [...(systemInstruction ? [{ role: 'system', content: systemInstruction }] : []), { role: 'user', content: message }], temperature: 0.7, max_tokens: 2048, stream: false }),
+            body: JSON.stringify({ model: modelId, messages: [...(systemInstruction ? [{ role: 'system', content: systemInstruction }] : []), ...history, { role: 'user', content: message }], temperature: 0.7, max_tokens: 2048, stream: false }),
           });
         } else {
           aiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelId)}:generateContent?key=${encodeURIComponent(model.apiKey)}`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...(systemInstruction ? { systemInstruction: { parts: [{ text: systemInstruction }] } } : {}), contents: [{ role: 'user', parts: [{ text: message }] }], generationConfig: { temperature: 0.7, maxOutputTokens: 2048 } }),
+            body: JSON.stringify({ ...(systemInstruction ? { systemInstruction: { parts: [{ text: systemInstruction }] } } : {}), contents: [...history, { role: 'user', content: message }].map((item: any) => ({ role: item.role === 'assistant' ? 'model' : 'user', parts: [{ text: item.content }] })), generationConfig: { temperature: 0.7, maxOutputTokens: 2048 } }),
           });
         }
       } catch { await send('No se pudo conectar con la IA. Inténtalo de nuevo.'); return json({ error: 'AI provider unavailable' }, 502); }
@@ -301,6 +301,7 @@ export default {
         catch { return json({ error: 'El cuerpo debe ser JSON válido.' }, 400); }
         const agentId = typeof input?.agentId === 'string' ? input.agentId : '';
         const message = typeof input?.message === 'string' ? input.message.trim() : '';
+        const history = Array.isArray(input?.history) ? input.history.slice(-20).filter((item: any) => (item?.role === 'user' || item?.role === 'assistant') && typeof item?.content === 'string').map((item: any) => ({ role: item.role, content: item.content.slice(0, 12000) })) : [];
         if (!agentId || !message) return json({ error: 'agentId y message son obligatorios.' }, 400);
         if (message.length > 12000) return json({ error: 'El mensaje supera el límite de 12000 caracteres.' }, 413);
         const config = await storage.getConfig();
