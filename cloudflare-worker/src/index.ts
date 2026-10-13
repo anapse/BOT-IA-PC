@@ -420,7 +420,7 @@ export default {
 
         isGemini = provider.includes('gemini') || provider === 'google' || provider.includes('google');
         isAnthropic = provider.includes('anthropic') || provider === 'claude';
-        isOpenAICompatible = provider === 'openai' || provider.includes('openrouter') || provider.includes('nvidia') || provider.includes('deepseek') || provider.includes('groq') || provider.includes('together') || provider.includes('mistral') || provider.includes('xai');
+        isOpenAICompatible = provider === 'openai' || provider === 'openai-compatible' || provider.includes('openrouter') || provider.includes('nvidia') || provider.includes('deepseek') || provider.includes('groq') || provider.includes('together') || provider.includes('mistral') || provider.includes('xai');
         if (!isGemini && !isAnthropic && !isOpenAICompatible) return json({ error: 'Proveedor no compatible. Usa OpenAI, Anthropic, Google Gemini, OpenRouter o NVIDIA NIM.' }, 400);
         if (isGemini) modelId = modelId.replace(/^models\//i, '');
         if (!modelId) return json({ error: 'Introduce el ID técnico del modelo.' }, 400);
@@ -431,20 +431,20 @@ export default {
         let upstream: Response;
         try {
           if (isAnthropic) {
-            upstream = await fetch('https://api.anthropic.com/v1/messages', {
+            upstream = await fetch((endpoint ? endpoint.replace(/\/+$/, '') : 'https://api.anthropic.com/v1') + '/messages', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'false' },
               body: JSON.stringify({ model: modelId, max_tokens: 2048, temperature: 0.7, ...(systemInstruction ? { system: systemInstruction } : {}), messages: [...safeHistory, { role: 'user', content: message }].map((item: any) => ({ role: item.role === 'assistant' ? 'assistant' : 'user', content: item.content })) }),
             });
           } else if (isGemini) {
-            upstream = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelId)}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+            upstream = await fetch((endpoint ? endpoint.replace(/\/+$/, '') : 'https://generativelanguage.googleapis.com/v1beta') + `/models/${encodeURIComponent(modelId)}:generateContent?key=${encodeURIComponent(apiKey)}`, {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ ...(systemInstruction ? { systemInstruction: { parts: [{ text: systemInstruction }] } } : {}), contents: [...safeHistory, { role: 'user', content: message }].map((item: any) => ({ role: item.role === 'assistant' ? 'model' : 'user', parts: [{ text: item.content }] })), generationConfig: { temperature: 0.7, maxOutputTokens: 2048 } }),
             });
           } else {
             const defaultEndpoint = provider.includes('openrouter') ? 'https://openrouter.ai/api/v1/chat/completions'
               : provider.includes('nvidia') ? 'https://integrate.api.nvidia.com/v1/chat/completions'
-              : provider === 'openai' ? 'https://api.openai.com/v1/chat/completions'
+               : provider === 'openai-compatible' ? endpoint : provider === 'openai' ? 'https://api.openai.com/v1/chat/completions'
               : provider.includes('deepseek') ? 'https://api.deepseek.com/chat/completions'
               : provider.includes('groq') ? 'https://api.groq.com/openai/v1/chat/completions'
               : provider.includes('together') ? 'https://api.together.xyz/v1/chat/completions'
@@ -452,7 +452,7 @@ export default {
               : provider.includes('xai') ? 'https://api.x.ai/v1/chat/completions'
               : 'https://api.openai.com/v1/chat/completions';
             // Temporary models use fixed provider URLs, not user-controlled endpoints.
-            const requestEndpoint = temporary ? defaultEndpoint : (endpoint || defaultEndpoint);
+            const requestEndpoint = temporary ? defaultEndpoint : (endpoint ? (endpoint.replace(/\/+$/, '').endsWith('/chat/completions') ? endpoint.replace(/\/+$/, '') : endpoint.replace(/\/+$/, '') + '/chat/completions') : defaultEndpoint);
             upstream = await fetch(requestEndpoint, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}`, ...(provider.includes('openrouter') ? { 'HTTP-Referer': 'https://anapse.github.io/BOT-IA-PC/', 'X-OpenRouter-Title': 'BOT IA PC' } : {}) },
