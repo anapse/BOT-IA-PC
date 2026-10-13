@@ -5,7 +5,7 @@ export const navigation = [
   { id: 'agentes', name: 'Agentes de IA', icon: Bot },
   { id: 'chat', name: 'Chat IA', icon: MessagesSquare },
   { id: 'telegram', name: 'Telegram', icon: MessageSquare },
-  { id: 'modelos', name: 'Modelos de IA', icon: BrainCircuit },
+  { id: 'modelos', name: 'Proveedores', icon: BrainCircuit },
   { id: 'firebase', name: 'Firebase', icon: Database },
   { id: 'comunicacion', name: 'Comunicación', icon: Network },
   { id: 'worker', name: 'Cloudflare Worker', icon: Cpu },
