@@ -1,8 +1,9 @@
-import { LayoutDashboard, Bot, MessageSquare, BrainCircuit, Database, Network, Cpu, ShieldAlert, FileText, Settings } from 'lucide-react';
+import { LayoutDashboard, Bot, MessageSquare, BrainCircuit, Database, Network, Cpu, ShieldAlert, FileText, Settings, MessagesSquare } from 'lucide-react';
 
 export const navigation = [
   { id: 'inicio', name: 'Inicio', icon: LayoutDashboard },
   { id: 'agentes', name: 'Agentes de IA', icon: Bot },
+  { id: 'chat', name: 'Chat IA', icon: MessagesSquare },
   { id: 'telegram', name: 'Telegram', icon: MessageSquare },
   { id: 'modelos', name: 'Modelos de IA', icon: BrainCircuit },
   { id: 'firebase', name: 'Firebase', icon: Database },
