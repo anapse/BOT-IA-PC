@@ -83,7 +83,7 @@ export const ChatPage = () => {
   }, [conversations]);
 
   const startNewChat = (agentId = selectedAgentId) => {
-    setActiveConversationId(''); setTargetMode('agent'); setSelectedAgentId(agentId); setMessage(''); setError('');
+    setActiveConversationId(''); setTargetMode('agent'); setSelectedAgentId(agentId); setSelectedModelId(models[0]?.id || '__temporary__'); setMessage(''); setError('');
     setTimeout(() => textareaRef.current?.focus(), 0);
   };
   const handleSend = async (event?: React.FormEvent) => {
@@ -94,7 +94,8 @@ export const ChatPage = () => {
 
     let outgoingText = rawText;
     let mode: 'agent' | 'model' = activeConversation?.targetMode || targetMode;
-    let targetId = activeConversation?.targetId || activeConversation?.agentId || (mode === 'agent' ? selectedAgentId : selectedModelId);\n    const useTemporaryModel = mode === 'model' && (Boolean(activeConversation?.temporaryModel) || (!activeConversation && selectedModelId === '__temporary__'));\n    const temporaryModel = useTemporaryModel ? (activeConversation?.temporaryModel || { provider: temporaryProvider, modelId: temporaryModelId.trim(), name: `${temporaryModelId.trim()} · temporal` }) : undefined;\n    if (useTemporaryModel) targetId = `temp:${temporaryModel!.provider}:${temporaryModel!.modelId}`;
+    let targetId = activeConversation?.targetId || activeConversation?.agentId || (mode === 'agent' ? selectedAgentId : selectedModelId);
+    const useTemporaryModel = mode === 'model' && (Boolean(activeConversation?.temporaryModel) || (!activeConversation && selectedModelId === '__temporary__'));\n    const temporaryModel = useTemporaryModel ? (activeConversation?.temporaryModel || { provider: temporaryProvider, modelId: temporaryModelId.trim(), name: `${temporaryModelId.trim()} · temporal` }) : undefined;\n    if (useTemporaryModel) targetId = `temp:${temporaryModel!.provider}:${temporaryModel!.modelId}`;
     let localReply = '';
 
     if (/^\$agente\s+list\s*$/i.test(rawText)) {
@@ -149,7 +150,8 @@ export const ChatPage = () => {
         setConversations(current => current.map(item => item.id === conversationId ? { ...item, messages: [...item.messages, reply], updatedAt: reply.createdAt } : item));
       } else {
         if (!targetId) throw new Error(mode === 'agent' ? 'Selecciona un agente activo.' : 'Selecciona un modelo activo.');
-        const result = await sendAgentChatMessage(workerUrl, targetId, outgoingText, previousMessages.map(item => ({ role: item.role, content: item.content })), mode);
+        if (useTemporaryModel && (!temporaryModel?.modelId.trim() || !temporaryApiKey.trim())) throw new Error('Para usar un modelo temporal, introduce su ID técnico y API Key. La clave solo se conserva en memoria mientras esta página esté abierta.');
+        const result = await sendAgentChatMessage(workerUrl, targetId, outgoingText, previousMessages.map(item => ({ role: item.role, content: item.content })), mode, useTemporaryModel ? { provider: temporaryModel!.provider, modelId: temporaryModel!.modelId, apiKey: temporaryApiKey } : undefined);
         const reply: ChatMessage = { id: makeId(), role: 'assistant', content: result.reply, createdAt: new Date().toISOString(), model: result.model };
         setConversations(current => current.map(item => item.id === conversationId ? { ...item, messages: [...item.messages, reply], updatedAt: reply.createdAt } : item));
       }
@@ -188,6 +190,11 @@ export const ChatPage = () => {
           </select><ChevronDown size={14} className="shrink-0 text-slate-500"/>
         </div>
       </header>
+      {temporarySelected && <div className="border-b border-slate-800 bg-slate-900/70 px-3 py-3 sm:px-5"><div className="mx-auto grid max-w-3xl grid-cols-1 gap-2 sm:grid-cols-3">
+        <label className="text-[11px] text-slate-400">Proveedor<select value={effectiveTemporaryProvider} onChange={event => { setTemporaryProvider(event.target.value); setActiveConversationId(''); }} disabled={Boolean(activeTemporaryModel)} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-100"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="google">Google Gemini</option><option value="openrouter">OpenRouter</option><option value="nvidia">NVIDIA NIM</option></select></label>
+        <label className="text-[11px] text-slate-400">ID técnico del modelo<input value={effectiveTemporaryModelId} onChange={event => { setTemporaryModelId(event.target.value); setActiveConversationId(''); }} disabled={Boolean(activeTemporaryModel)} placeholder={effectiveTemporaryProvider === 'google' ? 'gemini-2.5-flash' : effectiveTemporaryProvider === 'anthropic' ? 'claude-sonnet-4-5' : effectiveTemporaryProvider === 'openrouter' ? 'proveedor/modelo' : effectiveTemporaryProvider === 'nvidia' ? 'meta/llama-3.3-70b-instruct' : 'gpt-4.1-mini'} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-100 placeholder:text-slate-600"/></label>
+        <label className="text-[11px] text-slate-400">API Key (no se guarda)<input type="password" autoComplete="off" value={temporaryApiKey} onChange={event => setTemporaryApiKey(event.target.value)} placeholder="Pega tu clave para esta sesión" className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-100 placeholder:text-slate-600"/></label>
+      </div><p className="mx-auto mt-2 max-w-3xl text-[10px] leading-4 text-slate-500">La clave temporal se envía por HTTPS al Worker para esta petición; no se guarda en Firebase, KV ni en el historial del navegador. Al recargar la página tendrás que volver a introducirla.</p></div>}
       <div className="flex-1 overflow-y-auto"><div className="mx-auto flex min-h-full w-full max-w-3xl flex-col px-4 py-6 sm:px-6 sm:py-8">
         {!currentMessages.length ? <div className="flex flex-1 flex-col items-center justify-center py-10 text-center">
           <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-slate-700 bg-slate-900 text-cyan-300 shadow-lg shadow-black/20"><Sparkles size={26}/></div><h2 className="text-xl sm:text-2xl font-semibold tracking-tight">¿En qué te ayudo?</h2>
