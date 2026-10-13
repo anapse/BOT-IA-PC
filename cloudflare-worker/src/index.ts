@@ -209,7 +209,7 @@ export default {
         await send('El modelo asignado no está listo. Comprueba que sea Gemini, NVIDIA NIM u OpenRouter, esté activo y tenga API Key.');
         return json({ status: 'model_unavailable' });
       }
-      const configuredModelId = String(model.modelId || agent.model || '').trim();
+      const configuredModelId = String(model.modelId || (mode === 'agent' ? agent?.model : '') || '').trim();
       const modelId = isGemini ? configuredModelId.replace(/^models\//i, '') : configuredModelId;
       if (isGemini && !/^gemini-[a-zA-Z0-9._-]+$/i.test(modelId)) {
         await send(`ID de modelo Gemini no válido: ${configuredModelId}`);
@@ -299,18 +299,22 @@ export default {
         let input: any;
         try { input = await request.json(); }
         catch { return json({ error: 'El cuerpo debe ser JSON válido.' }, 400); }
-        const agentId = typeof input?.agentId === 'string' ? input.agentId : '';
+        const mode = input?.mode === 'model' ? 'model' : 'agent';
+        const agentId = typeof input?.agentId === 'string' ? input.agentId : (mode === 'agent' && typeof input?.targetId === 'string' ? input.targetId : '');
+        const requestedModelId = typeof input?.modelId === 'string' ? input.modelId : (mode === 'model' && typeof input?.targetId === 'string' ? input.targetId : '');
         const message = typeof input?.message === 'string' ? input.message.trim() : '';
         const history = Array.isArray(input?.history) ? input.history.slice(-20).filter((item: any) => (item?.role === 'user' || item?.role === 'assistant') && typeof item?.content === 'string').map((item: any) => ({ role: item.role, content: item.content.slice(0, 12000) })) : [];
-        if (!agentId || !message) return json({ error: 'agentId y message son obligatorios.' }, 400);
+        if ((mode === 'agent' ? !agentId : !requestedModelId) || !message) return json({ error: 'El destino y el mensaje son obligatorios.' }, 400);
         if (message.length > 12000) return json({ error: 'El mensaje supera el límite de 12000 caracteres.' }, 413);
         const config = await storage.getConfig();
-        const agent = Array.isArray(config.agents) ? config.agents.find((item: any) => item?.id === agentId) : null;
-        if (!agent) return json({ error: 'El agente no aparece en la configuración sincronizada. Sincroniza desde el panel.' }, 404);
-        if (agent.status && agent.status !== 'activo') return json({ error: 'El agente está pausado o inactivo.' }, 409);
+        const agent = mode === 'agent' ? (Array.isArray(config.agents) ? config.agents.find((item: any) => item?.id === agentId) : null) : null;
+        if (mode === 'agent' && !agent) return json({ error: 'El agente no aparece en la configuración sincronizada. Sincroniza desde el panel.' }, 404);
+        if (mode === 'agent' && agent?.status && agent.status !== 'activo') return json({ error: 'El agente está pausado o inactivo.' }, 409);
         const models = Array.isArray(config.models) ? config.models : [];
-        const model = models.find((item: any) => item?.status === 'activo' && (item?.modelId === agent.model || item?.id === agent.model || item?.name === agent.model));
-        if (!model) return json({ error: `No se encontró un modelo activo para "${agent.model || 'sin modelo'}". Comprueba la asignación y sincroniza otra vez.` }, 400);
+        const model = mode === 'model'
+          ? models.find((item: any) => item?.status === 'activo' && (item?.id === requestedModelId || item?.modelId === requestedModelId || item?.name === requestedModelId))
+          : models.find((item: any) => item?.status === 'activo' && (item?.modelId === agent?.model || item?.id === agent?.model || item?.name === agent?.model));
+        if (!model) return json({ error: mode === 'model' ? 'No se encontró ese modelo activo. Sincroniza la configuración desde el panel.' : `No se encontró un modelo activo para "${agent?.model || 'sin modelo'}". Comprueba la asignación y sincroniza otra vez.` }, 400);
         if (model.connectionType === 'local') return json({ error: 'Los modelos locales todavía no se ejecutan desde este Worker.' }, 400);
         const provider = String(model.provider || '').toLowerCase();
         const isNvidia = provider.includes('nvidia');
@@ -324,7 +328,7 @@ export default {
           return json({ error: `El ID de modelo Gemini no es válido: "${configuredModelId}". Usa el ID técnico, por ejemplo gemini-3.5-flash-lite, sin URL ni texto adicional.` }, 400);
         }
         if (isNvidia && !modelId) return json({ error: 'Configura el ID del modelo NVIDIA, por ejemplo meta/llama-3.3-70b-instruct.' }, 400);
-        const systemInstruction = ['No repitas presentaciones ni saludos al principio de cada respuesta. Preséntate solo si el usuario pregunta quién eres; responde directamente a la consulta y varía la redacción de forma natural.', agent.systemPrompt || '', agent.personality ? `Personalidad: ${agent.personality}` : '', agent.description ? `Descripción: ${agent.description}` : ''].filter(Boolean).join('\\n\\n');
+        const systemInstruction = mode === 'agent' ? ['No repitas presentaciones ni saludos al principio de cada respuesta. Preséntate solo si el usuario pregunta quién eres; responde directamente a la consulta y varía la redacción de forma natural.', agent?.systemPrompt || '', agent?.personality ? `Personalidad: ${agent.personality}` : '', agent?.description ? `Descripción: ${agent.description}` : ''].filter(Boolean).join('\\n\\n') : '';
         let upstream: Response;
         try {
           if (isNvidia || isOpenRouter) {
