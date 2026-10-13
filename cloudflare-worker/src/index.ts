@@ -169,7 +169,20 @@ export default {
       try {
         const upstream = await fetch(endpoint, { headers });
         const payload: any = await upstream.json().catch(() => ({}));
-        if (!upstream.ok) { const detail = typeof payload?.error?.message === 'string' ? payload.error.message : (typeof payload?.detail === 'string' ? payload.detail : (typeof payload?.message === 'string' ? payload.message : (typeof payload?.title === 'string' ? payload.title : 'El proveedor rechazó la clave.'))); const hint = upstream.status === 401 ? ' Verifica que sea una API Key nvapi- creada en build.nvidia.com y que no tenga espacios.' : upstream.status === 403 ? ' La cuenta puede no tener permiso para usar este endpoint.' : ''; return json({ error: 'Catálogo (HTTP ' + upstream.status + '): ' + detail.slice(0, 250) + hint }, upstream.status === 401 || upstream.status === 403 ? 400 : 502); }
+        if (!upstream.ok) {
+          const detail = typeof payload?.error?.message === 'string' ? payload.error.message : (typeof payload?.detail === 'string' ? payload.detail : (typeof payload?.message === 'string' ? payload.message : (typeof payload?.title === 'string' ? payload.title : 'El proveedor rechazó la clave.')));
+          if (provider.includes('nvidia') && (upstream.status === 403 || upstream.status === 404)) {
+            // Keep visual model candidates selectable when NVIDIA's chat catalog denies or omits them.
+            // The actual inference call remains authoritative and may report missing account access.
+            const candidates = [
+              { id: 'black-forest-labs/flux.2-klein-4b', name: 'FLUX.2 Klein 4B (candidato; requiere acceso NVIDIA)', inputModalities: ['text'], outputModalities: ['image'], inputModalitiesKnown: true, outputModalitiesKnown: true, capabilitiesSource: 'inferred' },
+              { id: 'stability-ai/stable-diffusion-3.5-large', name: 'Stable Diffusion 3.5 Large (candidato; requiere acceso NVIDIA)', inputModalities: ['text'], outputModalities: ['image'], inputModalitiesKnown: true, outputModalitiesKnown: true, capabilitiesSource: 'inferred' },
+            ];
+            return json({ models: candidates, count: candidates.length, note: 'Modelos visuales candidatos; NVIDIA debe autorizar la clave para poder ejecutarlos.' });
+          }
+          const hint = upstream.status === 401 ? ' Verifica que sea una API Key nvapi- creada en build.nvidia.com y que no tenga espacios.' : upstream.status === 403 ? ' La cuenta puede no tener permiso para usar este endpoint.' : '';
+          return json({ error: 'Catálogo (HTTP ' + upstream.status + '): ' + detail.slice(0, 250) + hint }, upstream.status === 401 || upstream.status === 403 ? 400 : 502);
+        }
         const source = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload?.models) ? payload.models : [];
         const models = source.map((item: any) => {
           const id = String(item?.id || item?.name || '').replace(/^models\//, '');
@@ -222,8 +235,8 @@ export default {
         // Add documented image candidates separately; actual access still depends on the NVIDIA account/key.
         if (provider.includes('nvidia')) {
           const knownVisualModels = [
-            { id: 'black-forest-labs/flux.2-klein-4b', name: 'FLUX.2 Klein 4B · NVIDIA Visual GenAI', inputModalities: ['text'], outputModalities: ['image'], inputModalitiesKnown: true, outputModalitiesKnown: true, capabilitiesSource: 'provider' },
-            { id: 'stability-ai/stable-diffusion-3.5-large', name: 'Stable Diffusion 3.5 Large · NVIDIA Visual GenAI', inputModalities: ['text'], outputModalities: ['image'], inputModalitiesKnown: true, outputModalitiesKnown: true, capabilitiesSource: 'provider' },
+            { id: 'black-forest-labs/flux.2-klein-4b', name: 'FLUX.2 Klein 4B (candidato; requiere acceso NVIDIA)', inputModalities: ['text'], outputModalities: ['image'], inputModalitiesKnown: true, outputModalitiesKnown: true, capabilitiesSource: 'inferred' },
+            { id: 'stability-ai/stable-diffusion-3.5-large', name: 'Stable Diffusion 3.5 Large (candidato; requiere acceso NVIDIA)', inputModalities: ['text'], outputModalities: ['image'], inputModalitiesKnown: true, outputModalitiesKnown: true, capabilitiesSource: 'inferred' },
           ];
           for (const candidate of knownVisualModels) {
             if (!models.some((item: any) => String(item.id).toLowerCase() === candidate.id.toLowerCase())) models.push(candidate);
