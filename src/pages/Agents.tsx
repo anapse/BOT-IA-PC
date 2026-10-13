@@ -111,7 +111,6 @@ export const AgentsPage = () => {
   const loadAgentModels = async () => {
     const provider = providers.find(item => item.id === providerId);
     if (!provider) { setErrorMsg('Primero registra y activa un proveedor en la sección Proveedores.'); return; }
-    if (!provider.apiKey) { setErrorMsg('Este proveedor no tiene una API key guardada. Edítalo en Proveedores.'); return; }
     setLoadingCatalog(true); setErrorMsg('');
     try {
       const saved = await getDocData('appSettings', 'workerConfig');
