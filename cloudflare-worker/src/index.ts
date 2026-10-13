@@ -53,6 +53,14 @@ function extractOutputAttachments(providerResult: any, isGemini: boolean, isAnth
     : isAnthropic
       ? (Array.isArray(providerResult?.content) ? providerResult.content : [])
       : (Array.isArray(providerResult?.choices?.[0]?.message?.content) ? providerResult.choices[0].message.content : []);
+  if (isGemini && Array.isArray(providerResult?.predictions)) {
+    for (const prediction of providerResult.predictions) {
+      const data = prediction?.bytesBase64Encoded || prediction?.bytes_base64_encoded;
+      if (typeof data === 'string' && data.length <= 14_000_000) {
+        attachments.push({ name: `imagen-${attachments.length + 1}.png`, mimeType: String(prediction?.mimeType || prediction?.mime_type || 'image/png'), data });
+      }
+    }
+  }
   for (const part of parts) {
     const inline = part?.inlineData || part?.inline_data;
     if (inline && typeof inline.data === 'string' && typeof (inline.mimeType || inline.mime_type) === 'string') {
@@ -149,11 +157,13 @@ export default {
           let capabilitiesSource: 'provider' | 'inferred' | 'unknown' = inputModalities !== null || outputModalities !== null ? 'provider' : 'unknown';
           // Google models.list exposes generation methods and token limits, but not a universal modality schema.
           // Infer common Gemini families conservatively and label them as inferred in the UI.
-          if ((provider.includes('google') || provider.includes('gemini')) && inputModalities === null && outputModalities === null && supportedGenerationMethods.includes('generateContent')) {
+          if ((provider.includes('google') || provider.includes('gemini')) && inputModalities === null && outputModalities === null && (supportedGenerationMethods.includes('generateContent') || /^(imagen|veo)-/.test(id.toLowerCase()))) {
             const technicalId = id.toLowerCase();
             if (/tts|text-to-speech/.test(technicalId)) {
               inputModalities = ['text']; outputModalities = ['audio'];
-            } else if (/imagen|image|nano-banana/.test(technicalId)) {
+            } else if (/^imagen-/.test(technicalId)) {
+              inputModalities = ['text']; outputModalities = ['image'];
+            } else if (/image|nano-banana/.test(technicalId)) {
               inputModalities = ['text', 'image']; outputModalities = ['image'];
             } else if (/veo|video/.test(technicalId)) {
               inputModalities = ['text', 'image']; outputModalities = ['video'];
@@ -653,7 +663,9 @@ export default {
         if (!isGemini && !isAnthropic && !isOpenAICompatible) return json({ error: 'Proveedor no compatible. Usa OpenAI, Anthropic, Google Gemini, OpenRouter o NVIDIA NIM.' }, 400);
         if (isGemini) modelId = modelId.replace(/^models\//i, '');
         if (!modelId) return json({ error: 'Introduce el ID técnico del modelo.' }, 400);
-        if (isGemini && !/^gemini-[a-zA-Z0-9._-]+$/i.test(modelId)) return json({ error: `El ID de modelo Gemini no es válido: "${modelId}".` }, 400);
+        if (isGemini && !/^(gemini|imagen|veo)-[a-zA-Z0-9._-]+$/i.test(modelId)) return json({ error: `El ID de modelo Google no es válido: "${modelId}".` }, 400);
+        if (isGemini && /^veo-/i.test(modelId)) return json({ error: 'La generación de vídeo Veo utiliza una operación asíncrona específica y todavía no está integrada en el chat. Este modelo no se enviará por la ruta de texto.' }, 415);
+        if (isGemini && /^imagen-/i.test(modelId) && attachments.length) return json({ error: 'Este modelo Imagen genera imágenes a partir de texto y no admite los adjuntos actuales en esta ruta. Quita los archivos y envía un prompt de texto.' }, 415);
 
         const systemInstruction = mode === 'agent' ? ['No repitas presentaciones ni saludos al principio de cada respuesta. Preséntate solo si el usuario pregunta quién eres; responde directamente a la consulta y varía la redacción de forma natural.', agent?.systemPrompt || '', agent?.personality ? `Personalidad: ${agent.personality}` : '', agent?.description ? `Descripción: ${agent.description}` : ''].filter(Boolean).join('\\n\\n') : '';
         const safeHistory = history.map((item: any) => ({ role: item.role, content: item.content }));
@@ -681,13 +693,34 @@ export default {
               body: JSON.stringify({ model: modelId, max_tokens: 2048, temperature: 0.7, ...(systemInstruction ? { system: systemInstruction } : {}), messages: [...safeHistory, { role: 'user', content: anthropicContent.length ? anthropicContent : message }].map((item: any) => ({ role: item.role === 'assistant' ? 'assistant' : 'user', content: item.content })) }),
               signal: AbortSignal.timeout(45000),
             });
+          } else if (isGemini && /^imagen-/i.test(modelId)) {
+            const base = (endpoint ? endpoint.replace(/\/+$/, '') : 'https://generativelanguage.googleapis.com/v1beta');
+            upstream = await fetch(base + `/models/${encodeURIComponent(modelId)}:predict?key=${encodeURIComponent(apiKey)}`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ instances: [{ prompt: message }], parameters: { sampleCount: 1 } }),
+              signal: AbortSignal.timeout(45000),
+            });
           } else if (isGemini) {
             const currentParts: any[] = [];
             if (message) currentParts.push({ text: message });
             for (const item of attachments) currentParts.push({ inlineData: { mimeType: item.mimeType, data: item.data } });
             upstream = await fetch((endpoint ? endpoint.replace(/\/+$/, '') : 'https://generativelanguage.googleapis.com/v1beta') + `/models/${encodeURIComponent(modelId)}:generateContent?key=${encodeURIComponent(apiKey)}`, {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ ...(systemInstruction ? { systemInstruction: { parts: [{ text: systemInstruction }] } } : {}), contents: [...safeHistory.map((item: any) => ({ role: item.role === 'assistant' ? 'model' : 'user', parts: [{ text: item.content }] })), { role: 'user', parts: currentParts }], generationConfig: { temperature: 0.7, maxOutputTokens: 2048 } }),
+              body: JSON.stringify({
+                ...(systemInstruction ? { systemInstruction: { parts: [{ text: systemInstruction }] } } : {}),
+                contents: [...safeHistory.map((item: any) => ({ role: item.role === 'assistant' ? 'model' : 'user', parts: [{ text: item.content }] })), { role: 'user', parts: currentParts }],
+                generationConfig: {
+                  temperature: 0.7,
+                  maxOutputTokens: 2048,
+                  ...(/(?:tts|text-to-speech)/i.test(modelId)
+                    ? { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } } }
+                    : /(?:imagen|image|nano-banana)/i.test(modelId)
+                      ? { responseModalities: ['TEXT', 'IMAGE'] }
+                      : /(?:omni|audio)/i.test(modelId)
+                        ? { responseModalities: ['TEXT', 'AUDIO'] }
+                        : {}),
+                },
+              }),
               signal: AbortSignal.timeout(45000),
             });
           } else {
