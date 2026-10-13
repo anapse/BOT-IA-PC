@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Bot, Plus, Send, PanelLeftClose, PanelLeftOpen, MessageSquare, Trash2, Sparkles, ChevronDown, LoaderCircle, UserRound, AlertCircle } from 'lucide-react';
 import { subscribeCollection, getDocData } from '../services/firebase/db';
-import { sendAgentChatMessage } from '../services/worker/client';
+import { sendAgentChatMessage, fetchProviderCatalog } from '../services/worker/client';
 
 type Agent = { id: string; name: string; description?: string; model?: string; status?: 'activo' | 'inactivo' | 'pausado'; systemPrompt?: string; personality?: string };
 type ModelOption = { id: string; name: string; modelId?: string; provider?: string; connectionType?: 'cloud' | 'local'; status?: 'activo' | 'inactivo'; apiKey?: string };
