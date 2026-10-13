@@ -36,21 +36,66 @@ const normalizeSvg = (value: string) => {
 const SvgPreview = ({ source }: { source: string }) => {
   const [visible, setVisible] = useState(false);
   const [imageError, setImageError] = useState(false);
+  const [copied, setCopied] = useState(false);
   const svg = normalizeSvg(source.trim());
   const src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  const looksIncomplete = /<svg\b/i.test(svg) && (
+    !/<\/svg\s*>/i.test(source) ||
+    /<([a-z][\w:-]*)\b[^>]*$/i.test(svg.split('\n').slice(-2).join('\n')) ||
+    /(?:=\s*["'][^"']*)$/.test(svg.split('\n').slice(-2).join('\n')) ||
+    ((svg.match(/<([a-z][\w:-]*)\b[^>]*>/gi) || []).length > (svg.match(/<\/[a-z][\w:-]*\s*>/gi) || []).length + 2)
+  );
+
+  const copySvg = async () => {
+    try {
+      await navigator.clipboard.writeText(svg);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      const field = document.createElement('textarea');
+      field.value = svg;
+      field.setAttribute('readonly', '');
+      field.style.position = 'fixed';
+      field.style.opacity = '0';
+      document.body.appendChild(field);
+      field.select();
+      const ok = document.execCommand('copy');
+      field.remove();
+      setCopied(ok);
+      window.setTimeout(() => setCopied(false), 1800);
+    }
+  };
+
+  const openSvg = () => {
+    const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank', 'noopener,noreferrer');
+    window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+  };
 
   return <div className="my-3 max-w-full">
     <button type="button" onClick={() => { setVisible(value => !value); setImageError(false); }} className="inline-flex items-center gap-2 rounded-lg border border-cyan-800 bg-cyan-950/50 px-3 py-2 text-xs font-medium text-cyan-300 transition-colors hover:bg-cyan-900/60">
       {visible ? 'Ocultar vista SVG' : 'Ver SVG'}
     </button>
     {visible && <div className="mt-3 overflow-hidden rounded-xl border border-slate-700 bg-slate-900">
-      <div className="flex items-center justify-between border-b border-slate-700 px-3 py-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-700 px-3 py-2">
         <span className="text-xs font-medium text-slate-300">Vista previa SVG</span>
-        <span className="text-[10px] text-slate-500">Fondo cuadriculado = transparencia</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[10px] text-slate-500">Cuadrícula = transparencia</span>
+          <button type="button" onClick={() => void copySvg()} className="rounded-md border border-slate-700 px-2 py-1 text-[11px] text-slate-300 hover:bg-slate-800">{copied ? '¡Copiado!' : 'Copiar SVG'}</button>
+          <button type="button" onClick={openSvg} className="rounded-md border border-slate-700 px-2 py-1 text-[11px] text-cyan-300 hover:bg-slate-800">Abrir aparte</button>
+        </div>
       </div>
       <div className="flex min-h-48 items-center justify-center p-4" style={{ backgroundColor: '#111827', backgroundImage: 'linear-gradient(45deg, #1f2937 25%, transparent 25%), linear-gradient(-45deg, #1f2937 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #1f2937 75%), linear-gradient(-45deg, transparent 75%, #1f2937 75%)', backgroundSize: '24px 24px', backgroundPosition: '0 0, 0 12px, 12px -12px, -12px 0' }}>
         {imageError
-          ? <p className="max-w-md text-center text-xs leading-5 text-amber-300">No se pudo representar este SVG. Se intentó corregir el formato, pero el código puede estar incompleto o mal formado.</p>
+          ? <div className="w-full max-w-2xl">
+              <p className="mb-2 text-sm font-medium text-amber-300">No se pudo representar este SVG.</p>
+              <p className="mb-3 text-xs leading-5 text-slate-400">{looksIncomplete ? 'Parece incompleto o contiene una etiqueta/atributo cortado. El visor no puede inventar el contenido que falta.' : 'El código contiene una estructura SVG que el navegador no pudo interpretar. Puedes copiarlo y revisarlo.'}</p>
+              <details open className="rounded-lg border border-slate-700 bg-slate-950/80">
+                <summary className="cursor-pointer px-3 py-2 text-xs text-slate-300">Ver código SVG recibido</summary>
+                <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-all p-3 text-[11px] leading-5 text-slate-300">{source}</pre>
+              </details>
+            </div>
           : <img src={src} alt="Vista previa del SVG generado" onError={() => setImageError(true)} className="max-h-[560px] max-w-full object-contain" />}
       </div>
     </div>}
