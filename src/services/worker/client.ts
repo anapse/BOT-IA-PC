@@ -87,11 +87,19 @@ export const syncWorkerProviders = async (workerUrl: string, providers: any[]) =
   return result;
 };
 
-export const fetchProviderCatalog = async (workerUrl: string, provider: { type: string; endpoint?: string; apiKey?: string }) => {
+export const fetchProviderCatalog = async (workerUrl: string, provider: { type: string; apiKey?: string }) => {
+  const providerLabels: Record<string, string> = {
+    openai: 'OpenAI',
+    anthropic: 'Anthropic',
+    google: 'Google Gemini',
+    openrouter: 'OpenRouter',
+    nvidia: 'NVIDIA NIM',
+    'openai-compatible': 'Personalizado',
+  };
   const response = await fetch(workerUrl.replace(/\/$/, '') + '/models/catalog', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ provider: provider.type, endpoint: provider.endpoint || '', apiKey: provider.apiKey || '' }),
+    body: JSON.stringify({ provider: providerLabels[provider.type] || provider.type, apiKey: provider.apiKey || '' }),
   });
   const result = await response.json().catch(() => ({} as any));
   if (!response.ok) throw new Error(typeof result?.error === 'string' ? result.error : 'No se pudo consultar el catálogo del proveedor.');
