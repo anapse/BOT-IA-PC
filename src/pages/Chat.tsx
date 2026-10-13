@@ -5,6 +5,8 @@ import { sendAgentChatMessage } from '../services/worker/client';
 
 type Agent = { id: string; name: string; description?: string; model?: string; status?: 'activo' | 'inactivo' | 'pausado'; systemPrompt?: string; personality?: string };
 type ModelOption = { id: string; name: string; modelId?: string; provider?: string; connectionType?: 'cloud' | 'local'; status?: 'activo' | 'inactivo'; apiKey?: string };
+type ProviderOption = { id: string; name: string; type: string; endpoint?: string; apiKey?: string; status: 'activo' | 'inactivo' };
+type CatalogModel = { id: string; name: string };
 type ChatMessage = { id: string; role: 'user' | 'assistant'; content: string; createdAt: string; model?: string };
 type TemporaryModel = { provider: string; modelId: string; name: string };
 type Conversation = { id: string; title: string; agentId: string; targetMode?: 'agent' | 'model'; targetId?: string; temporaryModel?: TemporaryModel; messages: ChatMessage[]; updatedAt: string };
@@ -20,6 +22,10 @@ const readConversations = (): Conversation[] => {
 export const ChatPage = () => {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [models, setModels] = useState<ModelOption[]>([]);
+  const [providers, setProviders] = useState<ProviderOption[]>([]);
+  const [selectedProviderId, setSelectedProviderId] = useState('');
+  const [catalogModels, setCatalogModels] = useState<CatalogModel[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
   const [conversations, setConversations] = useState<Conversation[]>(readConversations);
   const [activeConversationId, setActiveConversationId] = useState('');
   const [selectedAgentId, setSelectedAgentId] = useState('');
@@ -45,6 +51,11 @@ export const ChatPage = () => {
       setLoadingAgents(false);
       setSelectedAgentId(current => current && available.some(agent => agent.id === current) ? current : (available[0]?.id || ''));
     });
+    const unsubscribeProviders = subscribeCollection('providers', data => {
+      const active = (data as ProviderOption[]).filter(provider => provider.status === 'activo');
+      setProviders(active);
+      setSelectedProviderId(current => current && active.some(provider => provider.id === current) ? current : (active[0]?.id || ''));
+    });
     const unsubscribeModels = subscribeCollection('modelConfigs', data => {
       const availableModels = (data as ModelOption[]).filter(model => (!model.status || model.status === 'activo') && model.connectionType !== 'local' && Boolean(model.modelId));
       setModels(availableModels);
@@ -53,7 +64,7 @@ export const ChatPage = () => {
     getDocData('appSettings', 'workerConfig').then(saved => {
       if (saved?.value) setWorkerUrl(String(saved.value).replace(/\/$/, ''));
     }).catch(() => undefined);
-    return () => { unsubscribe(); unsubscribeModels(); };
+    return () => { unsubscribe(); unsubscribeModels(); unsubscribeProviders(); };
   }, []);
 
   useEffect(() => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations)); } catch { /* storage unavailable */ } }, [conversations]);
