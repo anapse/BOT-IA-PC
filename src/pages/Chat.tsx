@@ -215,7 +215,6 @@ export const ChatPage = () => {
       const imageModelId = list.find(item => (item.outputModalities || []).includes('image') || /flux|imagen|stable[ ._-]?diffusion|sdxl|image[ ._-]?generation|dall[ ._-]?e|nano[ ._-]?banana|kandinsky|playground/i.test(`${item.name} ${item.id}`))?.id || '';
       const nextModelId = imageMode ? imageModelId : (list.some(item => item.id === selectedModelId) ? selectedModelId : (list[0]?.id || ''));
       setSelectedModelId(nextModelId);
-      if (imageMode && activeConversation) updateConversationTarget(activeConversation.id, 'model', nextModelId, id);
       if (!list.length) setError('El proveedor respondió, pero no ofreció modelos disponibles.');
     } catch (e: any) {
       setCatalogModels([]);
@@ -255,7 +254,9 @@ export const ChatPage = () => {
   }, [conversations]);
   const activeConversation = conversations.find(item => item.id === activeConversationId) || null;
   const effectiveMode: 'agent' | 'model' = activeConversation?.targetMode || targetMode;
-  const effectiveTargetId = activeConversation ? (activeConversation.targetId || activeConversation.agentId) : (targetMode === 'agent' ? selectedAgentId : selectedModelId);
+  const effectiveTargetId = activeConversation
+    ? (activeConversation.targetMode === 'model' ? (activeConversation.targetId || selectedModelId) : (activeConversation.targetId || activeConversation.agentId))
+    : (targetMode === 'agent' ? selectedAgentId : selectedModelId);
   const selectedAgent = agents.find(agent => agent.id === (effectiveMode === 'agent' ? effectiveTargetId : selectedAgentId)) || null;
   const selectedModel = models.find(model => model.id === (effectiveMode === 'model' ? effectiveTargetId : selectedModelId)) || null;
   const selectedCatalogModel = catalogModels.find(model => model.id === (effectiveMode === 'model' ? effectiveTargetId : selectedModelId)) || null;
