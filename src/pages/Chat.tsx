@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Bot, Plus, Send, PanelLeftClose, PanelLeftOpen, MessageSquare, Trash2, Sparkles, ChevronDown, LoaderCircle, UserRound, AlertCircle } from 'lucide-react';
-import { subscribeCollection, getDocData, getCollectionDataStrict } from '../services/firebase/db';
+import { subscribeCollection, getDocData } from '../services/firebase/db';
 import { sendAgentChatMessage, fetchProviderCatalog } from '../services/worker/client';
 
 type Agent = { id: string; name: string; description?: string; model?: string; status?: 'activo' | 'inactivo' | 'pausado'; systemPrompt?: string; personality?: string };
@@ -77,11 +77,8 @@ export const ChatPage = () => {
     }
     setCatalogLoading(true); setError(''); setCatalogModels([]);
     try {
-      // Firestore contiene la configuración guardada. Actualizamos solo los proveedores en KV
-      // antes de consultar el catálogo, sin volver a sincronizar ni tocar los webhooks de Telegram.
-      const savedProviders = await getCollectionDataStrict('providers');
-      // Enviar la configuración guardada junto con la petición del catálogo evita depender de una ruta de sincronización adicional.
-      const list = await fetchProviderCatalog(workerUrl, provider.id, savedProviders) as CatalogModel[];
+      // Consultar el catálogo con los datos del proveedor elegido evita depender de una sincronización de configuración previa.
+      const list = await fetchProviderCatalog(workerUrl, provider) as CatalogModel[];
       setCatalogModels(list);
       setSelectedModelId(current => list.some(item => item.id === current) ? current : (list[0]?.id || ''));
       if (!list.length) setError('El proveedor respondió, pero no ofreció modelos disponibles.');
