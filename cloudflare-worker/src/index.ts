@@ -120,25 +120,29 @@ export default {
         const command = normalizeCommand(commandMatch[1]);
         const argument = (commandMatch[2] || '').trim();
         if (command === 'agente' || command === 'agent') {
-          const subcommand = normalizeCommand(argument.split(/\s+/)[0] || '');
-          if (!argument || subcommand === 'list' || subcommand === 'lista') {
+          const [requestedName = '', ...messageParts] = argument.split(/\s+/);
+          const requested = normalizeCommand(requestedName);
+          if (!argument || requested === 'list' || requested === 'lista') {
             const lines = activeAgents.map((item: any) => {
               const label = String(item.name || item.nombre || item.id || 'Agente');
               const alias = normalizeCommand(String(item.id || item.name || item.nombre || ''));
-              return `• ${label} — ${alias}`;
+              return `• ${label} — $${alias}`;
             });
             await send(lines.length ? `Agentes disponibles:\n${lines.join('\n')}` : 'No hay agentes activos.');
             return json({ status: 'agent_list' });
           }
-          const requested = normalizeCommand(argument);
           const found = activeAgents.find((item: any) => normalizeCommand(String(item.name || item.nombre || '')) === requested || normalizeCommand(String(item.id || '')) === requested);
           if (!found) {
             await send('Agente no disponible.');
             return json({ status: 'agent_not_found' });
           }
-          await env.WORKER_KV.put(stateKey, String(found.id));
-          await send(`Seleccionado: ${found.name || found.id}`);
-          return json({ status: 'agent_selected', agentId: found.id });
+          selectedAgentId = String(found.id);
+          routedMessage = messageParts.join(' ').trim();
+          await env.WORKER_KV.put(stateKey, selectedAgentId);
+          if (!routedMessage) {
+            await send(`Seleccionado: ${found.name || found.id}`);
+            return json({ status: 'agent_selected', agentId: selectedAgentId });
+          }
         }
         const directAgent = activeAgents.find((item: any) => normalizeCommand(String(item.name || item.nombre || '')) === command || normalizeCommand(String(item.id || '')) === command);
         if (directAgent) {
