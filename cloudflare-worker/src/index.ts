@@ -53,6 +53,25 @@ function extractOutputAttachments(providerResult: any, isGemini: boolean, isAnth
     : isAnthropic
       ? (Array.isArray(providerResult?.content) ? providerResult.content : [])
       : (Array.isArray(providerResult?.choices?.[0]?.message?.content) ? providerResult.choices[0].message.content : []);
+  if (!isGemini && !isAnthropic) {
+    const message = providerResult?.choices?.[0]?.message;
+    const audio = message?.audio;
+    if (audio && typeof audio.data === 'string' && audio.data.length <= 14_000_000) {
+      const format = String(audio.format || 'wav').toLowerCase();
+      attachments.push({ name: 'respuesta-audio', mimeType: format === 'mp3' ? 'audio/mpeg' : `audio/${format}`, data: audio.data });
+    }
+    if (Array.isArray(message?.images)) {
+      for (const image of message.images) {
+        const url = image?.image_url?.url || image?.url;
+        if (typeof url === 'string' && url.startsWith('data:')) {
+          const match = url.match(/^data:([^;,]+);base64,([\s\S]+)$/);
+          if (match && match[2].length <= 14_000_000) attachments.push({ name: `respuesta-${attachments.length + 1}`, mimeType: match[1], data: match[2] });
+        } else if (typeof url === 'string' && /^https:\/\//i.test(url)) {
+          attachments.push({ name: `respuesta-${attachments.length + 1}`, mimeType: 'image/remote', url });
+        }
+      }
+    }
+  }
   if (isGemini && Array.isArray(providerResult?.predictions)) {
     for (const prediction of providerResult.predictions) {
       const data = prediction?.bytesBase64Encoded || prediction?.bytes_base64_encoded;
@@ -744,7 +763,14 @@ export default {
             upstream = await fetch(requestEndpoint, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}`, ...(provider.includes('openrouter') ? { 'HTTP-Referer': 'https://anapse.github.io/BOT-IA-PC/', 'X-OpenRouter-Title': 'BOT IA PC' } : {}) },
-              body: JSON.stringify({ model: modelId, messages: [...(systemInstruction ? [{ role: 'system', content: systemInstruction }] : []), ...safeHistory, { role: 'user', content: currentUserContent }], temperature: 0.7, max_tokens: 2048, stream: false }),
+              body: JSON.stringify({
+                model: modelId,
+                messages: [...(systemInstruction ? [{ role: 'system', content: systemInstruction }] : []), ...safeHistory, { role: 'user', content: currentUserContent }],
+                temperature: 0.7,
+                max_tokens: 2048,
+                stream: false,
+                ...(/(?:audio|tts)/i.test(modelId) ? { modalities: ['text', 'audio'], audio: { voice: 'alloy', format: 'wav' } } : {}),
+              }),
               signal: AbortSignal.timeout(45000),
             });
           }
