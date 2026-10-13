@@ -11,6 +11,7 @@ import { TelegramPage } from './pages/Telegram';
 import { ModelsPage } from './pages/Models';
 import { FirebasePage } from './pages/FirebasePage';
 import { CommunicationPage } from './pages/Communication';
+import { ChatPage } from './pages/Chat';
 import { WorkerPage } from './pages/WorkerPage';
 import { SecurityPage } from './pages/Security';
 import { LogsPage } from './pages/Logs';
@@ -87,6 +88,7 @@ export default function App() {
       case 'modelos': return <ModelsPage />;
       case 'firebase': return <FirebasePage />;
       case 'comunicacion': return <CommunicationPage />;
+      case 'chat': return <ChatPage />;
       case 'worker': return <WorkerPage />;
       case 'seguridad': return <SecurityPage />;
       case 'logs': return <LogsPage />;
