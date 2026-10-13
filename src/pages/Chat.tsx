@@ -147,8 +147,11 @@ export const ChatPage = () => {
     let mode: 'agent' | 'model' = activeConversation?.targetMode || targetMode;
     let targetId = activeConversation?.targetId || activeConversation?.agentId || (mode === 'agent' ? selectedAgentId : selectedModelId);
     const providerIdForRequest = activeConversation?.targetProviderId || selectedProviderId;
-    const useTemporaryModel = false;
-    const temporaryModel = undefined;
+    const selectedProviderForRequest = providers.find(provider => provider.id === providerIdForRequest);
+    const catalogModelForRequest = catalogModels.find(model => model.id === targetId);
+    const temporaryModel = mode === 'model' && catalogModelForRequest && selectedProviderForRequest
+      ? { provider: selectedProviderForRequest.type, modelId: catalogModelForRequest.id, apiKey: selectedProviderForRequest.apiKey || '' }
+      : undefined;
     let localReply = '';
 
     if (/^\$agente\s+list\s*$/i.test(rawText)) {
@@ -204,8 +207,24 @@ ${agents.map(agent => `• $${aliasFor(agent)} — ${agent.name}`).join('\\n')}`
         setConversations(current => current.map(item => item.id === conversationId ? { ...item, messages: [...item.messages, reply], updatedAt: reply.createdAt } : item));
       } else {
         if (!targetId) throw new Error(mode === 'agent' ? 'Selecciona un agente activo.' : 'Selecciona un modelo activo.');
-        if (mode === 'model' && (!providerIdForRequest || !targetId)) throw new Error('Selecciona un proveedor y un modelo registrado.');
-        const result = await sendAgentChatMessage(workerUrl, targetId, outgoingText, previousMessages.map(item => ({ role: item.role, content: item.content })), mode, undefined, mode === 'model' ? providerIdForRequest : undefined);
+        if (mode === 'model') {
+          if (!providerIdForRequest || !targetId || !selectedProviderForRequest || !catalogModelForRequest) {
+            throw new Error('Selecciona un proveedor activo y un modelo de su catálogo.');
+          }
+          if (!temporaryModel?.apiKey) throw new Error('El proveedor seleccionado no tiene una API key disponible.');
+          if (!['openai', 'anthropic', 'google', 'openrouter', 'nvidia'].includes(temporaryModel.provider)) {
+            throw new Error('Este tipo de proveedor todavía no admite el uso directo de modelos del catálogo en el chat.');
+          }
+        }
+        const result = await sendAgentChatMessage(
+          workerUrl,
+          targetId,
+          outgoingText,
+          previousMessages.map(item => ({ role: item.role, content: item.content })),
+          mode,
+          mode === 'model' ? temporaryModel : undefined,
+          mode === 'model' ? providerIdForRequest : undefined
+        );
         const reply: ChatMessage = { id: makeId(), role: 'assistant', content: result.reply, createdAt: new Date().toISOString(), model: result.model };
         setConversations(current => current.map(item => item.id === conversationId ? { ...item, messages: [...item.messages, reply], updatedAt: reply.createdAt } : item));
       }
