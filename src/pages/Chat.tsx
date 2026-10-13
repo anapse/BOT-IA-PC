@@ -165,7 +165,11 @@ export const ChatPage = () => {
       if (file.size > 8 * 1024 * 1024) { setError(`"${file.name}" supera el límite de 8 MB por archivo.`); continue; }
       if (totalBytes + file.size > 10 * 1024 * 1024) { setError('Los adjuntos superan el límite total de 10 MB.'); continue; }
       const modality = file.type.startsWith('image/') ? 'image' : file.type.startsWith('audio/') ? 'audio' : file.type.startsWith('video/') ? 'video' : 'pdf';
-      if (effectiveMode === 'model' && selectedCatalogModel?.inputModalitiesKnown && !(selectedCatalogModel.inputModalities || []).includes(modality)) {
+      const declaredInputs = selectedCatalogModel?.inputModalities || [];
+      const modalitySupported = modality === 'pdf'
+        ? declaredInputs.some(value => ['pdf', 'document', 'file'].includes(value))
+        : declaredInputs.includes(modality);
+      if (effectiveMode === 'model' && selectedCatalogModel?.inputModalitiesKnown && !modalitySupported) {
         setError(`El modelo seleccionado no declara compatibilidad de entrada con ${modality === 'pdf' ? 'PDF/documentos' : modality}. Selecciona otro modelo para adjuntar este archivo.`);
         continue;
       }
@@ -365,7 +369,7 @@ ${agents.map(agent => `• $${aliasFor(agent)} — ${agent.name}`).join('\\n')}`
               {(selectedCatalogModel.inputModalities || []).includes('image') && <span title="Acepta imágenes como entrada" className="inline-flex items-center gap-1 rounded-md border border-cyan-800/70 bg-cyan-950/50 px-1.5 py-1 text-[10px] text-cyan-300"><ImageIcon size={12}/> Imagen</span>}
               {(selectedCatalogModel.inputModalities || []).includes('audio') && <span title="Acepta audio como entrada" className="inline-flex items-center gap-1 rounded-md border border-cyan-800/70 bg-cyan-950/50 px-1.5 py-1 text-[10px] text-cyan-300"><Mic size={12}/> Audio</span>}
               {(selectedCatalogModel.inputModalities || []).includes('video') && <span title="Acepta vídeo como entrada" className="inline-flex items-center gap-1 rounded-md border border-cyan-800/70 bg-cyan-950/50 px-1.5 py-1 text-[10px] text-cyan-300"><Video size={12}/> Vídeo</span>}
-              {(selectedCatalogModel.inputModalities || []).includes('pdf') && <span className="inline-flex items-center gap-1 rounded-md border border-cyan-800/70 bg-cyan-950/50 px-1.5 py-1 text-[10px] text-cyan-300"><FileText size={12}/> PDF</span>}
+              {(selectedCatalogModel.inputModalities || []).some(modality => ['pdf', 'document', 'file'].includes(modality)) && <span className="inline-flex items-center gap-1 rounded-md border border-cyan-800/70 bg-cyan-950/50 px-1.5 py-1 text-[10px] text-cyan-300"><FileText size={12}/> PDF</span>}
               {!(selectedCatalogModel.inputModalities || []).some(modality => ['image', 'audio', 'video', 'pdf'].includes(modality)) && <span className="rounded-md border border-slate-700 px-1.5 py-1 text-[10px] text-slate-400">Solo texto</span>}
               {(selectedCatalogModel.outputModalities || []).filter(modality => modality !== 'text').map(modality => <span key={modality} className="rounded-md border border-violet-800/70 bg-violet-950/40 px-1.5 py-1 text-[10px] text-violet-300">Salida: {modality}</span>)}
               {selectedCatalogModel.capabilitiesSource === 'inferred' && <span title="Modalidades estimadas a partir de la familia del modelo y sus métodos declarados" className="rounded-md border border-amber-900/70 bg-amber-950/30 px-1.5 py-1 text-[10px] text-amber-300">Capacidades estimadas</span>}
