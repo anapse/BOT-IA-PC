@@ -115,7 +115,7 @@ export const AgentsPage = () => {
     try {
       const saved = await getDocData('appSettings', 'workerConfig');
       const workerUrl = String(saved?.value || 'https://bot-ia-pc.elherreroanapse.workers.dev').replace(/\/$/, '');
-      const list = await fetchProviderCatalog(workerUrl, provider.id) as CatalogModel[];
+      const list = await fetchProviderCatalog(workerUrl, provider) as CatalogModel[];
       setCatalogModels(list);
       if (!list.some(item => item.id === model) && list[0]) setModel(list[0].id);
       if (!list.length) setErrorMsg('El proveedor respondió, pero no devolvió modelos disponibles.');
