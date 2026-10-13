@@ -23,8 +23,9 @@ service cloud.firestore {
       allow read, create, update, delete: if isSignedIn();
     }
 
+    // Model documents contain provider API keys: restrict them to administrators.
     match /modelConfigs/{modelId} {
-      allow read, create, update, delete: if isSignedIn();
+      allow read, create, update, delete: if isAdmin();
     }
 
     match /communicationRoutes/{routeId} {
