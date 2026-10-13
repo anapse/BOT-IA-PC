@@ -95,11 +95,22 @@ export default {
       if (!connection || connection.status !== 'activo' || !connection.botToken) return json({ error: 'Bot no encontrado o inactivo' }, 404);
       const incoming = update?.message;
       const chatId = incoming?.chat?.id;
+      const sender = incoming?.from;
       let message = typeof incoming?.text === 'string' ? incoming.text.trim() : '';
       if (!chatId || !message) return json({ status: 'ignored' });
+      const allowedUsers = Array.isArray(connection.allowedUsers) ? connection.allowedUsers.map((value: any) => String(value).trim().replace(/^@/, '').toLowerCase()).filter(Boolean) : [];
+      if (allowedUsers.length) {
+        const senderId = sender?.id == null ? '' : String(sender.id);
+        const senderUsername = String(sender?.username || '').replace(/^@/, '').toLowerCase();
+        if (!allowedUsers.includes(senderId) && (!senderUsername || !allowedUsers.includes(senderUsername))) {
+          const denied = await fetch(`https://api.telegram.org/bot${connection.botToken}/sendMessage`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: chatId, text: '⛔ No tienes permiso para usar este bot.' }) });
+          return json({ status: 'user_not_allowed' });
+        }
+      }
       const send = async (text: string) => fetch(`https://api.telegram.org/bot${connection.botToken}/sendMessage`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: chatId, text }) });
       const allAgents = Array.isArray(config.agents) ? config.agents : [];
-      const activeAgents = allAgents.filter((item: any) => !item?.status || item.status === 'activo');
+      const configuredAgentIds = Array.isArray(connection.agentIds) && connection.agentIds.length ? connection.agentIds.map(String) : (connection.agentId ? [String(connection.agentId)] : []);
+      const activeAgents = allAgents.filter((item: any) => (!item?.status || item.status === 'activo') && (!configuredAgentIds.length || configuredAgentIds.includes(String(item.id))));
       const normalizeCommand = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
       const stateKey = `telegram:selected-agent:${String(connection.botToken).slice(-10)}:${String(chatId)}`;
       const commandMatch = message.match(/^\$(\S+)(?:\s+([\s\S]*))?$/);
