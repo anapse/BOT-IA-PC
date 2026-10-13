@@ -15,6 +15,9 @@ interface ModelConfig {
   status: 'activo' | 'inactivo';
 }
 
+interface ProviderConfig { id: string; name: string; type: string; endpoint?: string; apiKey?: string; status: 'activo' | 'inactivo'; }
+interface CatalogModel { id: string; name: string; contextLength?: number | null; }
+
 interface Agent {
   id: string;
   name: string;
@@ -22,6 +25,8 @@ interface Agent {
   personality?: string;
   systemPrompt?: string;
   model?: string;
+  modelId?: string;
+  providerId?: string;
   status: 'activo' | 'inactivo' | 'pausado';
   createdAt: string;
 }
@@ -29,6 +34,11 @@ interface Agent {
 export const AgentsPage = () => {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [models, setModels] = useState<ModelConfig[]>([]);
+  const [providers, setProviders] = useState<ProviderConfig[]>([]);
+  const [catalogModels, setCatalogModels] = useState<CatalogModel[]>([]);
+  const [catalogSearch, setCatalogSearch] = useState('');
+  const [loadingCatalog, setLoadingCatalog] = useState(false);
+  const [providerId, setProviderId] = useState('');
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -58,9 +68,15 @@ export const AgentsPage = () => {
     const unsubscribeModels = subscribeCollection('modelConfigs', (data) => {
       setModels(data as ModelConfig[]);
     });
+    const unsubscribeProviders = subscribeCollection('providers', (data) => {
+      const active = (data as ProviderConfig[]).filter(item => item.status === 'activo');
+      setProviders(active);
+      setProviderId(current => current && active.some(item => item.id === current) ? current : (active[0]?.id || ''));
+    });
     return () => {
       unsubscribe();
       unsubscribeModels();
+      unsubscribeProviders();
     };
   }, []);
 
@@ -70,7 +86,9 @@ export const AgentsPage = () => {
     setDescription('');
     setPersonality('Asistente profesional y analítico');
     setSystemPrompt('Eres un agente autónomo de Bot IA PC...');
-    setModel(models.find((item) => item.status === 'activo')?.modelId || '');
+    setProviderId(providers[0]?.id || '');
+    setCatalogModels([]);
+    setModel('');
     setStatus('activo');
     setErrorMsg('');
     setIsModalOpen(true);
@@ -82,10 +100,34 @@ export const AgentsPage = () => {
     setDescription(agent.description || '');
     setPersonality(agent.personality || '');
     setSystemPrompt(agent.systemPrompt || '');
-    setModel(agent.model || models.find((item) => item.status === 'activo')?.modelId || '');
+    setProviderId(agent.providerId || providers[0]?.id || '');
+    setCatalogModels([]);
+    setModel(agent.modelId || agent.model || '');
     setStatus(agent.status || 'activo');
     setErrorMsg('');
     setIsModalOpen(true);
+  };
+
+  const loadAgentModels = async () => {
+    const provider = providers.find(item => item.id === providerId);
+    if (!provider) { setErrorMsg('Primero registra y activa un proveedor en la sección Proveedores.'); return; }
+    if (!provider.apiKey) { setErrorMsg('Este proveedor no tiene una API key guardada. Edítalo en Proveedores.'); return; }
+    setLoadingCatalog(true); setErrorMsg('');
+    try {
+      const saved = await getDocData('appSettings', 'workerConfig');
+      const workerUrl = String(saved?.value || 'https://bot-ia-pc.elherreroanapse.workers.dev').replace(/\/$/, '');
+      const response = await fetch(workerUrl + '/models/catalog', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: provider.type, endpoint: provider.endpoint, apiKey: provider.apiKey })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'No se pudo cargar el catálogo.');
+      const list = Array.isArray(result.models) ? result.models as CatalogModel[] : [];
+      setCatalogModels(list);
+      if (!list.some(item => item.id === model) && list[0]) setModel(list[0].id);
+      if (!list.length) setErrorMsg('El proveedor respondió, pero no devolvió modelos disponibles.');
+    } catch (error: any) { setErrorMsg(error?.message || 'Error consultando los modelos.'); }
+    finally { setLoadingCatalog(false); }
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -105,6 +147,8 @@ export const AgentsPage = () => {
           personality: personality.trim(),
           systemPrompt: systemPrompt.trim(),
           model,
+          modelId: model,
+          providerId,
           status,
           updatedAt: new Date().toISOString(),
         });
@@ -115,6 +159,8 @@ export const AgentsPage = () => {
           personality: personality.trim(),
           systemPrompt: systemPrompt.trim(),
           model,
+          modelId: model,
+          providerId,
           status,
           createdAt: new Date().toISOString(),
         });
@@ -347,45 +393,21 @@ export const AgentsPage = () => {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-slate-300">Modelo IA</label>
-                  <select
-                    value={model}
-                    onChange={(e) => setModel(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-sm text-slate-200 focus:outline-none focus:border-cyan-500"
-                    required
-                  >
-                    <option value="" disabled>
-                      {models.filter((item) => item.status === 'activo').length
-                        ? 'Selecciona un modelo activo'
-                        : 'No hay modelos activos; configura uno en Modelos'}
-                    </option>
-                    {model && !models.some((item) => item.status === 'activo' && item.modelId === model) && (
-                      <option value={model}>{model} (asignación anterior; elige un modelo activo)</option>
-                    )}
-                    {models.filter((item) => item.status === 'activo').map((item) => (
-                      <option key={item.id} value={item.modelId}>
-                        {item.name} — {item.modelId}
-                      </option>
-                    ))}
+                  <label className="text-xs font-medium text-slate-300">Proveedor y modelo</label>
+                  <select value={providerId} onChange={(e) => { setProviderId(e.target.value); setCatalogModels([]); setModel(''); }} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-sm text-slate-200 focus:outline-none focus:border-cyan-500">
+                    <option value="">Selecciona un proveedor</option>
+                    {providers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                   </select>
-                  {models.filter((item) => item.status === 'activo').length === 0 && (
-                    <p className="text-xs text-amber-400 mt-1">
-                      Primero registra y activa un modelo en la sección Modelos.
-                    </p>
-                  )}
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-slate-300">Estado inicial</label>
-                  <select
-                    value={status}
-                    onChange={(e) => setStatus(e.target.value as any)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-sm text-slate-200 focus:outline-none focus:border-cyan-500"
-                  >
-                    <option value="activo">Activo</option>
-                    <option value="pausado">Pausado</option>
-                    <option value="inactivo">Inactivo</option>
+                  <div className="flex gap-2 mt-2">
+                    <button type="button" onClick={loadAgentModels} disabled={!providerId || loadingCatalog} className="px-3 py-2 rounded-lg border border-cyan-800 text-cyan-300 text-xs disabled:opacity-50">{loadingCatalog ? 'Actualizando…' : 'Actualizar modelos'}</button>
+                    <input value={catalogSearch} onChange={e=>setCatalogSearch(e.target.value)} placeholder="Buscar modelo…" className="min-w-0 flex-1 bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200"/>
+                  </div>
+                  <select value={model} onChange={(e) => setModel(e.target.value)} className="mt-2 w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-sm text-slate-200 focus:outline-none focus:border-cyan-500" required>
+                    <option value="">Selecciona un modelo</option>
+                    {model && !catalogModels.some(item=>item.id===model) && <option value={model}>{model} (asignación guardada)</option>}
+                    {catalogModels.filter(item=>!catalogSearch.trim() || (item.name+' '+item.id).toLowerCase().includes(catalogSearch.trim().toLowerCase())).map(item=><option key={item.id} value={item.id}>{item.name} — {item.id}</option>)}
                   </select>
+                  {!providers.length && <p className="text-xs text-amber-400 mt-1">Configura primero un proveedor en Proveedores.</p>}
                 </div>
               </div>
 
