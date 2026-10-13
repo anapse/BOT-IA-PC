@@ -47,7 +47,7 @@ export const ModelsPage = () => {
 
   const syncCurrentConfig = async () => {
     const workerSettings = await getDocData('appSettings', 'workerConfig');
-    const workerUrl = String(workerSettings?.value || 'https://bot-ia-pc.elherreroanapse.workers.dev').trim().replace(/\\/$/, '');
+    const workerUrl = String(workerSettings?.value || 'https://bot-ia-pc.elherreroanapse.workers.dev').trim().replace(/\/$/, '');
     if (!workerUrl) throw new Error('No hay una URL de Worker configurada.');
 
     const [agents, currentModels, connections] = await Promise.all([
