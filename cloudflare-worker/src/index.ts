@@ -302,7 +302,7 @@ export default {
       const model: any = configuredProvider || legacyModel;
       const provider = String(configuredProvider?.type || legacyModel?.provider || '').toLowerCase();
       const apiKey = String(configuredProvider?.apiKey || legacyModel?.apiKey || '').trim();
-      const endpoint = String(configuredProvider?.endpoint || legacyModel?.endpoint || '').trim().replace(/\\/+$/, '');
+      const endpoint = String(configuredProvider?.endpoint || legacyModel?.endpoint || '').trim().replace(/\/+$/, '');
       const configuredModelId = String(agent.modelId || agent.model || legacyModel?.modelId || '').trim();
       const isGemini = provider.includes('gemini') || provider === 'google' || provider.includes('google');
       const isAnthropic = provider.includes('anthropic') || provider === 'claude';
@@ -311,7 +311,7 @@ export default {
         await send('El proveedor o modelo asignado no está listo. Comprueba que el proveedor esté activo, tenga API key y que el agente tenga un modelo compatible asignado.');
         return json({ status: 'model_unavailable' });
       }
-      const modelId = isGemini ? configuredModelId.replace(/^models\\//i, '') : configuredModelId;
+      const modelId = isGemini ? configuredModelId.replace(/^models\//i, '') : configuredModelId;
       if (!modelId) {
         await send('El agente no tiene un ID de modelo asignado. Abre BOT IA PC y guarda el modelo del agente.');
         return json({ status: 'invalid_model' });
