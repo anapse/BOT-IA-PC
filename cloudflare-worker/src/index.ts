@@ -48,6 +48,18 @@ type ChatAttachment = { name: string; mimeType: string; data: string };
 
 function extractOutputAttachments(providerResult: any, isGemini: boolean, isAnthropic: boolean) {
   const attachments: Array<{ name: string; mimeType: string; data?: string; url?: string }> = [];
+  // NVIDIA Visual GenAI endpoints (for example FLUX) return image bytes in artifacts,
+  // rather than the OpenAI-compatible choices/message shape.
+  if (Array.isArray(providerResult?.artifacts)) {
+    for (const artifact of providerResult.artifacts) {
+      const data = artifact?.base64 || artifact?.image_base64 || artifact?.bytesBase64Encoded;
+      if (typeof data === 'string' && data.length <= 14_000_000) {
+        attachments.push({ name: `imagen-${attachments.length + 1}.png`, mimeType: String(artifact?.mime_type || artifact?.mimeType || 'image/png'), data });
+      } else if (typeof artifact?.url === 'string' && /^https:\/\//i.test(artifact.url)) {
+        attachments.push({ name: `imagen-${attachments.length + 1}`, mimeType: 'image/remote', url: artifact.url });
+      }
+    }
+  }
   const parts = isGemini
     ? (Array.isArray(providerResult?.candidates?.[0]?.content?.parts) ? providerResult.candidates[0].content.parts : [])
     : isAnthropic
@@ -742,6 +754,37 @@ export default {
               }),
               signal: AbortSignal.timeout(45000),
             });
+          } else if (provider.includes('nvidia') && /(?:flux|stable[-_. ]?diffusion|sdxl|image[-_. ]?generation)/i.test(modelId)) {
+            // NVIDIA's image models use the Visual GenAI inference API, not /chat/completions.
+            let modelSlug = modelId.replace(/^models\//i, '').replace(/^nvidia\//i, '').replace(/^\/+|\/+$/g, '');
+            // Allow common short IDs as well as NVIDIA's publisher/model IDs.
+            const canonicalImageModels: Record<string, string> = {
+              'flux.2-klein-4b': 'black-forest-labs/flux.2-klein-4b',
+              'flux.1-dev': 'black-forest-labs/flux.1-dev',
+              'flux.1-schnell': 'black-forest-labs/flux.1-schnell',
+              'flux.1-kontext-dev': 'black-forest-labs/flux.1-kontext-dev',
+              'stable-diffusion-3.5-large': 'stability-ai/stable-diffusion-3.5-large',
+            };
+            modelSlug = canonicalImageModels[modelSlug.toLowerCase()] || modelSlug;
+            const configuredBase = endpoint.replace(/\/+$/, '');
+            const requestUrl = /\/v1\/genai\//i.test(configuredBase)
+              ? configuredBase
+              : `https://ai.api.nvidia.com/v1/genai/${modelSlug.split('/').map((part: string) => encodeURIComponent(part)).join('/')}`;
+            const parsedUrl = new URL(requestUrl);
+            if (parsedUrl.protocol !== 'https:') throw new Error('Invalid provider URL protocol');
+            // NVIDIA's FLUX.2 Klein endpoint accepts only four steps and uses
+            // the exact "Image Generation" mode; FLUX.1 models use different limits.
+            const isFlux2Klein = /(?:^|\/)flux\.2-klein-4b$/i.test(modelSlug);
+            const isFlux1Schnell = /flux\.1-schnell/i.test(modelSlug);
+            const imagePayload = isFlux2Klein
+              ? { prompt: message, mode: 'Image Generation', width: 1024, height: 1024, steps: 4, cfg_scale: 0, samples: 1, seed: 0 }
+              : { prompt: message, mode: 'base', width: 1024, height: 1024, steps: isFlux1Schnell ? 4 : 25, cfg_scale: isFlux1Schnell ? 0 : 3.5, samples: 1, seed: 0 };
+            upstream = await fetch(requestUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+              body: JSON.stringify(imagePayload),
+              signal: AbortSignal.timeout(90000),
+            });
           } else {
             const defaultEndpoint = provider.includes('openrouter') ? 'https://openrouter.ai/api/v1/chat/completions'
               : provider.includes('nvidia') ? 'https://integrate.api.nvidia.com/v1/chat/completions'
@@ -760,6 +803,12 @@ export default {
               else if (item.mimeType.startsWith('audio/')) currentContent.push({ type: 'input_audio', input_audio: { data: item.data, format: item.mimeType.includes('wav') ? 'wav' : 'mp3' } });
             }
             const currentUserContent = attachments.length ? currentContent : message;
+            const requestsImageGeneration = /(?:genera|generar|crea|crear|dibuja|dibujar|hazme|haz|produce|produzca|make|generate|create|draw|design)\s+(?:(?:me|una|un|la|el)\s+)*(?:una?\s+)?(?:imagen|imágenes|imagenes|foto|fotografía|ilustración|ilustracion|dibujo|logo|portada|image|picture|photo|illustration|drawing|artwork|icon|thumbnail)/i.test(message)
+              || /(?:imagen|image)\s+(?:de|of)\s+/i.test(message)
+              || /^(?:dibuja|dibujar|draw)\s+/i.test(message);
+            const openRouterImageTool = provider.includes('openrouter') && requestsImageGeneration
+              ? { modalities: ['text', 'image'], tools: [{ type: 'openrouter:image_generation' }], tool_choice: 'auto' }
+              : {};
             upstream = await fetch(requestEndpoint, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}`, ...(provider.includes('openrouter') ? { 'HTTP-Referer': 'https://anapse.github.io/BOT-IA-PC/', 'X-OpenRouter-Title': 'BOT IA PC' } : {}) },
@@ -770,8 +819,9 @@ export default {
                 max_tokens: 2048,
                 stream: false,
                 ...(/(?:audio|tts)/i.test(modelId) ? { modalities: ['text', 'audio'], audio: { voice: 'alloy', format: 'wav' } } : {}),
+                ...openRouterImageTool,
               }),
-              signal: AbortSignal.timeout(45000),
+              signal: AbortSignal.timeout(90000),
             });
           }
         } catch { return json({ error: 'No se pudo conectar con el proveedor de IA.' }, 502); }
