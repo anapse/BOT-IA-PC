@@ -135,22 +135,46 @@ export default {
         const models = source.map((item: any) => {
           const id = String(item?.id || item?.name || '').replace(/^models\//, '');
           const name = String(item?.name || item?.displayName || id).replace(/^models\//, '');
-          const inputModalities = Array.isArray(item?.architecture?.input_modalities)
+          let inputModalities = Array.isArray(item?.architecture?.input_modalities)
             ? item.architecture.input_modalities
             : Array.isArray(item?.input_modalities) ? item.input_modalities
             : Array.isArray(item?.inputModalities) ? item.inputModalities : null;
-          const outputModalities = Array.isArray(item?.architecture?.output_modalities)
+          let outputModalities = Array.isArray(item?.architecture?.output_modalities)
             ? item.architecture.output_modalities
             : Array.isArray(item?.output_modalities) ? item.output_modalities
             : Array.isArray(item?.outputModalities) ? item.outputModalities : null;
+          const supportedGenerationMethods = Array.isArray(item?.supportedGenerationMethods)
+            ? item.supportedGenerationMethods.map((value: any) => String(value))
+            : [];
+          let capabilitiesSource: 'provider' | 'inferred' | 'unknown' = inputModalities !== null || outputModalities !== null ? 'provider' : 'unknown';
+          // Google models.list exposes generation methods and token limits, but not a universal modality schema.
+          // Infer common Gemini families conservatively and label them as inferred in the UI.
+          if ((provider.includes('google') || provider.includes('gemini')) && inputModalities === null && outputModalities === null && supportedGenerationMethods.includes('generateContent')) {
+            const technicalId = id.toLowerCase();
+            if (/tts|text-to-speech/.test(technicalId)) {
+              inputModalities = ['text']; outputModalities = ['audio'];
+            } else if (/imagen|image|nano-banana/.test(technicalId)) {
+              inputModalities = ['text', 'image']; outputModalities = ['image'];
+            } else if (/veo|video/.test(technicalId)) {
+              inputModalities = ['text', 'image']; outputModalities = ['video'];
+            } else if (/audio|omni/.test(technicalId)) {
+              inputModalities = ['text', 'audio', 'image', 'video']; outputModalities = ['text', 'audio'];
+            } else if (/^gemini-/.test(technicalId)) {
+              inputModalities = ['text', 'image', 'audio', 'video', 'pdf']; outputModalities = ['text'];
+            }
+            if (inputModalities !== null || outputModalities !== null) capabilitiesSource = 'inferred';
+          }
           return id ? {
             id,
             name,
             contextLength: item?.context_length || item?.inputTokenLimit || null,
+            outputTokenLimit: item?.outputTokenLimit || null,
+            supportedGenerationMethods,
             inputModalities: inputModalities ? inputModalities.map((value: any) => String(value).toLowerCase()) : [],
             outputModalities: outputModalities ? outputModalities.map((value: any) => String(value).toLowerCase()) : [],
             inputModalitiesKnown: inputModalities !== null,
             outputModalitiesKnown: outputModalities !== null,
+            capabilitiesSource,
           } : null;
         }).filter(Boolean).sort((a: any, b: any) => a.name.localeCompare(b.name));
         return json({ models, count: models.length });
