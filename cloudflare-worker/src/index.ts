@@ -144,18 +144,20 @@ export default {
             return json({ status: 'agent_selected', agentId: selectedAgentId });
           }
         }
-        const directAgent = activeAgents.find((item: any) => normalizeCommand(String(item.name || item.nombre || '')) === command || normalizeCommand(String(item.id || '')) === command);
-        if (directAgent) {
-          selectedAgentId = String(directAgent.id);
-          routedMessage = argument;
-          await env.WORKER_KV.put(stateKey, selectedAgentId);
-          if (!routedMessage) {
-            await send(`✅ Agente seleccionado: ${directAgent.name || directAgent.id}. Envíale ahora tu mensaje.`);
-            return json({ status: 'agent_selected', agentId: selectedAgentId });
+        if (command !== 'agente' && command !== 'agent') {
+          const directAgent = activeAgents.find((item: any) => normalizeCommand(String(item.name || item.nombre || '')) === command || normalizeCommand(String(item.id || '')) === command);
+          if (directAgent) {
+            selectedAgentId = String(directAgent.id);
+            routedMessage = argument;
+            await env.WORKER_KV.put(stateKey, selectedAgentId);
+            if (!routedMessage) {
+              await send(`Seleccionado: ${directAgent.name || directAgent.id}`);
+              return json({ status: 'agent_selected', agentId: selectedAgentId });
+            }
+          } else {
+            await send('Agente no disponible.');
+            return json({ status: 'unknown_command' });
           }
-        } else {
-          await send(`Comando no reconocido: ${commandMatch[1]}. Escribe $agente list para ver los agentes.`);
-          return json({ status: 'unknown_command' });
         }
       } else {
         selectedAgentId = String(await env.WORKER_KV.get(stateKey) || '');
