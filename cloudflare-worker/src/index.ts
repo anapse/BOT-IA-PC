@@ -48,6 +48,18 @@ type ChatAttachment = { name: string; mimeType: string; data: string };
 
 function extractOutputAttachments(providerResult: any, isGemini: boolean, isAnthropic: boolean) {
   const attachments: Array<{ name: string; mimeType: string; data?: string; url?: string }> = [];
+  // NVIDIA Visual GenAI endpoints (for example FLUX) return image bytes in artifacts,
+  // rather than the OpenAI-compatible choices/message shape.
+  if (Array.isArray(providerResult?.artifacts)) {
+    for (const artifact of providerResult.artifacts) {
+      const data = artifact?.base64 || artifact?.image_base64 || artifact?.bytesBase64Encoded;
+      if (typeof data === 'string' && data.length <= 14_000_000) {
+        attachments.push({ name: `imagen-${attachments.length + 1}.png`, mimeType: String(artifact?.mime_type || artifact?.mimeType || 'image/png'), data });
+      } else if (typeof artifact?.url === 'string' && /^https:\/\//i.test(artifact.url)) {
+        attachments.push({ name: `imagen-${attachments.length + 1}`, mimeType: 'image/remote', url: artifact.url });
+      }
+    }
+  }
   const parts = isGemini
     ? (Array.isArray(providerResult?.candidates?.[0]?.content?.parts) ? providerResult.candidates[0].content.parts : [])
     : isAnthropic
@@ -742,6 +754,21 @@ export default {
               }),
               signal: AbortSignal.timeout(45000),
             });
+          } else if (provider.includes('nvidia') && /(?:flux|stable[-_. ]?diffusion|sdxl|image[-_. ]?generation)/i.test(modelId)) {
+            // NVIDIA's image models use the Visual GenAI inference API, not /chat/completions.
+            const modelSlug = modelId.replace(/^models\//i, '').replace(/^nvidia\//i, '').replace(/^\/+|\/+$/g, '');
+            const configuredBase = endpoint.replace(/\/+$/, '');
+            const requestUrl = /\/v1\/genai\//i.test(configuredBase)
+              ? configuredBase
+              : `https://ai.api.nvidia.com/v1/genai/${modelSlug.split('/').map((part: string) => encodeURIComponent(part)).join('/')}`;
+            const parsedUrl = new URL(requestUrl);
+            if (parsedUrl.protocol !== 'https:') throw new Error('Invalid provider URL protocol');
+            upstream = await fetch(requestUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+              body: JSON.stringify({ prompt: message, mode: 'base', width: 1024, height: 1024, steps: 25, cfg_scale: 3.5, samples: 1 }),
+              signal: AbortSignal.timeout(90000),
+            });
           } else {
             const defaultEndpoint = provider.includes('openrouter') ? 'https://openrouter.ai/api/v1/chat/completions'
               : provider.includes('nvidia') ? 'https://integrate.api.nvidia.com/v1/chat/completions'
@@ -760,6 +787,11 @@ export default {
               else if (item.mimeType.startsWith('audio/')) currentContent.push({ type: 'input_audio', input_audio: { data: item.data, format: item.mimeType.includes('wav') ? 'wav' : 'mp3' } });
             }
             const currentUserContent = attachments.length ? currentContent : message;
+            const requestsImageGeneration = /(?:genera|generar|crea|crear|dibuja|dibujar|hazme|haz|produce|produzca|make|generate|create|draw|design)\\s+(?:(?:me|una|un|la|el)\\s+)*(?:una?\\s+)?(?:imagen|imágenes|imagenes|foto|fotografía|ilustración|ilustracion|dibujo|logo|portada|image|picture|photo|illustration|drawing|artwork|icon|thumbnail)/i.test(message)
+              || /(?:imagen|image)\\s+(?:de|of)\\s+/i.test(message);
+            const openRouterImageTool = provider.includes('openrouter') && requestsImageGeneration
+              ? { modalities: ['text', 'image'], tools: [{ type: 'openrouter:image_generation' }], tool_choice: 'auto' }
+              : {};
             upstream = await fetch(requestEndpoint, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}`, ...(provider.includes('openrouter') ? { 'HTTP-Referer': 'https://anapse.github.io/BOT-IA-PC/', 'X-OpenRouter-Title': 'BOT IA PC' } : {}) },
@@ -770,8 +802,9 @@ export default {
                 max_tokens: 2048,
                 stream: false,
                 ...(/(?:audio|tts)/i.test(modelId) ? { modalities: ['text', 'audio'], audio: { voice: 'alloy', format: 'wav' } } : {}),
+                ...openRouterImageTool,
               }),
-              signal: AbortSignal.timeout(45000),
+              signal: AbortSignal.timeout(90000),
             });
           }
         } catch { return json({ error: 'No se pudo conectar con el proveedor de IA.' }, 502); }
