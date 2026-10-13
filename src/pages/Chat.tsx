@@ -126,9 +126,9 @@ export const ChatPage = () => {
     let outgoingText = rawText;
     let mode: 'agent' | 'model' = activeConversation?.targetMode || targetMode;
     let targetId = activeConversation?.targetId || activeConversation?.agentId || (mode === 'agent' ? selectedAgentId : selectedModelId);
-    const useTemporaryModel = mode === 'model' && (Boolean(activeConversation?.temporaryModel) || (!activeConversation && selectedModelId === '__temporary__'));
-    const temporaryModel = useTemporaryModel ? (activeConversation?.temporaryModel || { provider: temporaryProvider, modelId: temporaryModelId.trim(), name: `${temporaryModelId.trim()} · temporal` }) : undefined;
-    if (useTemporaryModel) targetId = `temp:${temporaryModel!.provider}:${temporaryModel!.modelId}`;
+    const providerIdForRequest = activeConversation?.targetProviderId || selectedProviderId;
+    const useTemporaryModel = false;
+    const temporaryModel = undefined;
     let localReply = '';
 
     if (/^\$agente\s+list\s*$/i.test(rawText)) {
@@ -171,7 +171,7 @@ ${agents.map(agent => `• $${aliasFor(agent)} — ${agent.name}`).join('\\n')}`
     const userMessage: ChatMessage = { id: makeId(), role: 'user', content: rawText, createdAt: now };
     let conversation = activeConversation;
     if (!conversation || mode !== (conversation.targetMode || 'agent') || targetId !== (conversation.targetId || conversation.agentId)) {
-      conversation = { id: makeId(), title: rawText.length > 42 ? `${rawText.slice(0, 42).trim()}…` : rawText, agentId: mode === 'agent' ? targetId : '', targetMode: mode, targetId, ...(useTemporaryModel && temporaryModel ? { temporaryModel } : {}), messages: [], updatedAt: now };
+      conversation = { id: makeId(), title: rawText.length > 42 ? `${rawText.slice(0, 42).trim()}…` : rawText, agentId: mode === 'agent' ? targetId : '', targetMode: mode, targetId, ...(mode === 'model' ? { targetProviderId: providerIdForRequest } : {}), messages: [], updatedAt: now };
       setActiveConversationId(conversation.id);
       setConversations(current => [conversation!, ...current]);
     }
@@ -184,8 +184,8 @@ ${agents.map(agent => `• $${aliasFor(agent)} — ${agent.name}`).join('\\n')}`
         setConversations(current => current.map(item => item.id === conversationId ? { ...item, messages: [...item.messages, reply], updatedAt: reply.createdAt } : item));
       } else {
         if (!targetId) throw new Error(mode === 'agent' ? 'Selecciona un agente activo.' : 'Selecciona un modelo activo.');
-        if (useTemporaryModel && (!temporaryModel?.modelId.trim() || !temporaryApiKey.trim())) throw new Error('Para usar un modelo temporal, introduce su ID técnico y API Key. La clave solo se conserva en memoria mientras esta página esté abierta.');
-        const result = await sendAgentChatMessage(workerUrl, targetId, outgoingText, previousMessages.map(item => ({ role: item.role, content: item.content })), mode, useTemporaryModel ? { provider: temporaryModel!.provider, modelId: temporaryModel!.modelId, apiKey: temporaryApiKey } : undefined);
+        if (mode === 'model' && (!providerIdForRequest || !targetId)) throw new Error('Selecciona un proveedor y un modelo registrado.');
+        const result = await sendAgentChatMessage(workerUrl, targetId, outgoingText, previousMessages.map(item => ({ role: item.role, content: item.content })), mode, undefined, mode === 'model' ? providerIdForRequest : undefined);
         const reply: ChatMessage = { id: makeId(), role: 'assistant', content: result.reply, createdAt: new Date().toISOString(), model: result.model };
         setConversations(current => current.map(item => item.id === conversationId ? { ...item, messages: [...item.messages, reply], updatedAt: reply.createdAt } : item));
       }
@@ -196,7 +196,7 @@ ${agents.map(agent => `• $${aliasFor(agent)} — ${agent.name}`).join('\\n')}`
     setConversations(current => current.filter(item => item.id !== id));
     if (activeConversationId === id) setActiveConversationId('');
   };
-  const selectConversation = (item: Conversation) => { setActiveConversationId(item.id); setTargetMode(item.targetMode || 'agent'); setSelectedAgentId(item.agentId); if (item.targetMode === 'model' && item.targetId) { setSelectedModelId(item.temporaryModel ? '__temporary__' : item.targetId); if (item.temporaryModel) { setTemporaryProvider(item.temporaryModel.provider); setTemporaryModelId(item.temporaryModel.modelId); } } setError(''); };
+  const selectConversation = (item: Conversation) => { setActiveConversationId(item.id); setTargetMode(item.targetMode || 'agent'); setSelectedAgentId(item.agentId); if (item.targetMode === 'model' && item.targetId) { setSelectedModelId(item.targetId); setSelectedProviderId(item.targetProviderId || ''); if (item.targetProviderId) void refreshProviderModels(item.targetProviderId); } setError(''); };
 
   return <div className="flex -m-4 sm:-m-8 h-[calc(100dvh-64px)] min-h-[520px] overflow-hidden bg-slate-950 text-slate-100">
     {sidebarOpen && <aside className="w-64 shrink-0 border-r border-slate-800 bg-slate-950 flex flex-col max-md:w-[76px]">
@@ -237,11 +237,6 @@ ${agents.map(agent => `• $${aliasFor(agent)} — ${agent.name}`).join('\\n')}`
           <ChevronDown size={14} className="shrink-0 text-slate-500"/>
         </div>
       </header>
-      {temporarySelected && <div className="border-b border-slate-800 bg-slate-900/70 px-3 py-3 sm:px-5"><div className="mx-auto grid max-w-3xl grid-cols-1 gap-2 sm:grid-cols-3">
-        <label className="text-[11px] text-slate-400">Proveedor<select value={effectiveTemporaryProvider} onChange={event => { setTemporaryProvider(event.target.value); setActiveConversationId(''); }} disabled={Boolean(activeTemporaryModel)} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-100"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="google">Google Gemini</option><option value="openrouter">OpenRouter</option><option value="nvidia">NVIDIA NIM</option></select></label>
-        <label className="text-[11px] text-slate-400">ID técnico del modelo<input value={effectiveTemporaryModelId} onChange={event => { setTemporaryModelId(event.target.value); setActiveConversationId(''); }} disabled={Boolean(activeTemporaryModel)} placeholder={effectiveTemporaryProvider === 'google' ? 'gemini-2.5-flash' : effectiveTemporaryProvider === 'anthropic' ? 'claude-sonnet-4-5' : effectiveTemporaryProvider === 'openrouter' ? 'proveedor/modelo' : effectiveTemporaryProvider === 'nvidia' ? 'meta/llama-3.3-70b-instruct' : 'gpt-4.1-mini'} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-100 placeholder:text-slate-600"/></label>
-        <label className="text-[11px] text-slate-400">API Key (no se guarda)<input type="password" autoComplete="off" value={temporaryApiKey} onChange={event => setTemporaryApiKey(event.target.value)} placeholder="Pega tu clave para esta sesión" className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-100 placeholder:text-slate-600"/></label>
-      </div><p className="mx-auto mt-2 max-w-3xl text-[10px] leading-4 text-slate-500">La clave temporal se envía por HTTPS al Worker para esta petición; no se guarda en Firebase, KV ni en el historial del navegador. Al recargar la página tendrás que volver a introducirla.</p></div>}
       <div className="flex-1 overflow-y-auto"><div className="mx-auto flex min-h-full w-full max-w-3xl flex-col px-4 py-6 sm:px-6 sm:py-8">
         {!currentMessages.length ? <div className="flex flex-1 flex-col items-center justify-center py-10 text-center">
           <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-slate-700 bg-slate-900 text-cyan-300 shadow-lg shadow-black/20"><Sparkles size={26}/></div><h2 className="text-xl sm:text-2xl font-semibold tracking-tight">¿En qué te ayudo?</h2>
