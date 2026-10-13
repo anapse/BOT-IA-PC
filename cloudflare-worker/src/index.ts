@@ -394,16 +394,28 @@ export default {
           if (!apiKey || apiKey.length > 500) return json({ error: 'Introduce una API Key válida.' }, 400);
           // Temporary keys are used only for this request: never write them to KV or Firebase.
         } else {
-          model = mode === 'model'
-            ? models.find((item: any) => item?.status === 'activo' && (item?.id === requestedModelId || item?.modelId === requestedModelId || item?.name === requestedModelId))
-            : models.find((item: any) => item?.status === 'activo' && (item?.modelId === agent?.model || item?.id === agent?.model || item?.name === agent?.model));
-          if (!model) return json({ error: mode === 'model' ? 'No se encontró ese modelo activo. Sincroniza la configuración desde el panel o elige un modelo temporal.' : `No se encontró un modelo activo para "${agent?.model || 'sin modelo'}". Comprueba la asignación y sincroniza otra vez.` }, 400);
-          if (model.connectionType === 'local') return json({ error: 'Los modelos locales todavía no se ejecutan desde este Worker.' }, 400);
-          provider = String(model.provider || '').toLowerCase();
-          modelId = String(model.modelId || (mode === 'agent' ? agent?.model : '') || '').trim();
-          apiKey = typeof model.apiKey === 'string' ? model.apiKey.trim() : '';
-          endpoint = typeof model.endpoint === 'string' ? model.endpoint.trim() : '';
-          if (!apiKey) return json({ error: 'El modelo no tiene API Key guardada. Edítalo y guarda la clave antes de sincronizar.' }, 400);
+          const providers = Array.isArray(config.providers) ? config.providers : [];
+          const providerId = mode === 'agent' ? String(agent?.providerId || '') : String(input?.providerId || '');
+          const configuredProvider = providerId ? providers.find((item: any) => item?.id === providerId && item?.status === 'activo') : null;
+          if (configuredProvider) {
+            provider = String(configuredProvider.type || '').toLowerCase();
+            modelId = String(mode === 'agent' ? (agent?.modelId || agent?.model || '') : requestedModelId).trim();
+            apiKey = typeof configuredProvider.apiKey === 'string' ? configuredProvider.apiKey.trim() : '';
+            endpoint = typeof configuredProvider.endpoint === 'string' ? configuredProvider.endpoint.trim() : '';
+            model = configuredProvider;
+            if (!apiKey) return json({ error: 'El proveedor seleccionado no tiene API key guardada.' }, 400);
+          } else {
+            model = mode === 'model'
+              ? models.find((item: any) => item?.status === 'activo' && (item?.id === requestedModelId || item?.modelId === requestedModelId || item?.name === requestedModelId))
+              : models.find((item: any) => item?.status === 'activo' && (item?.modelId === agent?.model || item?.id === agent?.model || item?.name === agent?.model));
+            if (!model) return json({ error: mode === 'model' ? 'No se encontró ese modelo activo. Selecciona un proveedor configurado o sincroniza la configuración.' : 'No se encontró un proveedor/modelo activo para este agente. Revisa su asignación.' }, 400);
+            if (model.connectionType === 'local') return json({ error: 'Los modelos locales todavía no se ejecutan desde este Worker.' }, 400);
+            provider = String(model.provider || '').toLowerCase();
+            modelId = String(model.modelId || (mode === 'agent' ? agent?.model : '') || '').trim();
+            apiKey = typeof model.apiKey === 'string' ? model.apiKey.trim() : '';
+            endpoint = typeof model.endpoint === 'string' ? model.endpoint.trim() : '';
+            if (!apiKey) return json({ error: 'El modelo no tiene API Key guardada. Edítalo y guarda la clave antes de sincronizar.' }, 400);
+          }
         }
 
         isGemini = provider.includes('gemini') || provider === 'google' || provider.includes('google');
