@@ -1,4 +1,4 @@
-name: Test Worker
+name: Test and Deploy Worker
 on:
   push:
     branches:
@@ -7,15 +7,24 @@ on:
       - 'cloudflare-worker/**'
       - '.github/workflows/deploy-worker.yml'
 jobs:
-  test:
+  test-and-deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
+          cache: npm
+          cache-dependency-path: cloudflare-worker/package-lock.json
       - name: Install dependencies
-        run: cd cloudflare-worker && npm install
+        run: npm ci
+        working-directory: cloudflare-worker
       - name: Run tests
-        run: cd cloudflare-worker && npm test
+        run: npm test
+        working-directory: cloudflare-worker
+      - name: Deploy Worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          workingDirectory: cloudflare-worker
