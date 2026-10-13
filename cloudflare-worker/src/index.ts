@@ -788,7 +788,8 @@ export default {
             }
             const currentUserContent = attachments.length ? currentContent : message;
             const requestsImageGeneration = /(?:genera|generar|crea|crear|dibuja|dibujar|hazme|haz|produce|produzca|make|generate|create|draw|design)\s+(?:(?:me|una|un|la|el)\s+)*(?:una?\s+)?(?:imagen|imágenes|imagenes|foto|fotografía|ilustración|ilustracion|dibujo|logo|portada|image|picture|photo|illustration|drawing|artwork|icon|thumbnail)/i.test(message)
-              || /(?:imagen|image)\s+(?:de|of)\s+/i.test(message);
+              || /(?:imagen|image)\s+(?:de|of)\s+/i.test(message)
+              || /^(?:dibuja|dibujar|draw)\s+/i.test(message);
             const openRouterImageTool = provider.includes('openrouter') && requestsImageGeneration
               ? { modalities: ['text', 'image'], tools: [{ type: 'openrouter:image_generation' }], tool_choice: 'auto' }
               : {};
