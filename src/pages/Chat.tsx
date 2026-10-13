@@ -18,7 +18,7 @@ const makeId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
 // Render image links returned by models as actual images instead of showing Markdown literally.
 const renderMessageContent = (content: string) => {
-  const imagePattern = /!\\[([^\\]]*)\\]\\((https?:\\/\\/[^\\s)]+|data:image\\/[^\\s)]+)\\)/g;
+  const imagePattern = /!\[([^\]]*)\]\((https?:\/\/[^\s)]+|data:image\/[^\s)]+)\)/g;
   const parts: any[] = [];
   let cursor = 0;
   let match: RegExpExecArray | null;
