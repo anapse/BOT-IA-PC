@@ -121,7 +121,7 @@ const MessageContent = ({ content }: { content: string }) => {
       const body = token.replace(/^\x60{3}(?:svg|xml|html)?[ \t]*\n?/, '').replace(/\x60{3}$/, '').trim();
       const normalizedBody = normalizeSvg(body);
       if (/<svg\b/i.test(normalizedBody)) {
-        parts.push(<SvgPreview key={'svg-' + tokenIndex++} source={normalizedBody} />);
+        parts.push(<SvgPreview key={'svg-' + tokenIndex++} source={body} />);
       } else {
         parts.push(<span key={'code-' + tokenIndex++} className="whitespace-pre-wrap break-words">{token}</span>);
       }
