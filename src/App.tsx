@@ -85,7 +85,7 @@ export default function App() {
       case 'inicio': return <Dashboard />;
       case 'agentes': return <AgentsPage />;
       case 'telegram': return <TelegramPage />;
-      case 'modelos': return <ModelsPage />;
+      case 'modelos': return <ProvidersPage />;
       case 'firebase': return <FirebasePage />;
       case 'comunicacion': return <CommunicationPage />;
       case 'chat': return <ChatPage />;
