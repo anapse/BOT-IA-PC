@@ -72,16 +72,9 @@ export const ChatPage = () => {
   const refreshProviderModels = async (id = selectedProviderId) => {
     const provider = providers.find(item => item.id === id);
     if (!provider) { setCatalogModels([]); return; }
-    if (!provider.apiKey) { setError('Este proveedor no tiene API key disponible. Abre Proveedores y vuelve a guardarla.'); return; }
     setCatalogLoading(true); setError('');
     try {
-      const response = await fetch(workerUrl + '/models/catalog', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider: provider.type, endpoint: provider.endpoint, apiKey: provider.apiKey })
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'No se pudo consultar el catálogo.');
-      const list = Array.isArray(result.models) ? result.models as CatalogModel[] : [];
+      const list = await fetchProviderCatalog(workerUrl, provider.id) as CatalogModel[];
       setCatalogModels(list);
       setSelectedModelId(current => list.some(item => item.id === current) ? current : (list[0]?.id || ''));
     } catch (e: any) { setError(e?.message || 'No se pudo cargar el catálogo.'); }
