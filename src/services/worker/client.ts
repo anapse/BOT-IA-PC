@@ -75,6 +75,18 @@ export const readWorkerConfig = async (workerUrl: string) => {
 
 export type TemporaryModelRequest = { provider: string; modelId: string; apiKey: string };
 
+export const syncWorkerProviders = async (workerUrl: string, providers: any[]) => {
+  const token = await getAdminToken();
+  const response = await fetch(workerUrl.replace(/\\/$/, '') + '/providers/sync', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+    body: JSON.stringify({ providers }),
+  });
+  const result = await response.json().catch(() => ({} as any));
+  if (!response.ok) throw new Error(typeof result?.error === 'string' ? result.error : 'No se pudo sincronizar la configuración guardada de proveedores.');
+  return result;
+};
+
 export const fetchProviderCatalog = async (workerUrl: string, providerId: string) => {
   const token = await getAdminToken();
   const response = await fetch(workerUrl.replace(/\/$/, '') + '/providers/catalog', {
