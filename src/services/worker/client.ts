@@ -87,12 +87,11 @@ export const syncWorkerProviders = async (workerUrl: string, providers: any[]) =
   return result;
 };
 
-export const fetchProviderCatalog = async (workerUrl: string, providerId: string, providers?: any[]) => {
-  const token = await getAdminToken();
-  const response = await fetch(workerUrl.replace(/\/$/, '') + '/providers/catalog', {
+export const fetchProviderCatalog = async (workerUrl: string, provider: { type: string; endpoint?: string; apiKey?: string }) => {
+  const response = await fetch(workerUrl.replace(/\/$/, '') + '/models/catalog', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-    body: JSON.stringify({ providerId, ...(providers ? { providers } : {}) }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ provider: provider.type, endpoint: provider.endpoint || '', apiKey: provider.apiKey || '' }),
   });
   const result = await response.json().catch(() => ({} as any));
   if (!response.ok) throw new Error(typeof result?.error === 'string' ? result.error : 'No se pudo consultar el catálogo del proveedor.');
