@@ -9,3 +9,8 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# BOT-IA-PC local-only state and secrets
+local-service/.env
+local-service/data/
+local-service/node_modules/
