@@ -120,8 +120,8 @@ export default {
         const command = normalizeCommand(commandMatch[1]);
         const argument = (commandMatch[2] || '').trim();
         if (command === 'agente' || command === 'agent') {
-          const [requestedName = '', ...messageParts] = argument.split(/\s+/);
-          const requested = normalizeCommand(requestedName);
+          const argumentWords = argument.split(/\s+/).filter(Boolean);
+          const requested = normalizeCommand(argumentWords[0] || '');
           if (!argument || requested === 'list' || requested === 'lista') {
             const lines = activeAgents.map((item: any) => {
               const label = String(item.name || item.nombre || item.id || 'Agente');
@@ -130,13 +130,22 @@ export default {
             await send(lines.length ? `Agentes disponibles:\n${lines.join('\n')}` : 'No hay agentes activos.');
             return json({ status: 'agent_list' });
           }
-          const found = activeAgents.find((item: any) => normalizeCommand(String(item.name || item.nombre || '')) === requested || normalizeCommand(String(item.id || '')) === requested);
+          let found: any = null;
+          let consumedWords = 0;
+          for (let count = argumentWords.length; count >= 1; count--) {
+            const candidate = argumentWords.slice(0, count).join(' ');
+            found = activeAgents.find((item: any) =>
+              normalizeCommand(String(item.name || item.nombre || '')) === normalizeCommand(candidate) ||
+              normalizeCommand(String(item.id || '')) === normalizeCommand(candidate)
+            );
+            if (found) { consumedWords = count; break; }
+          }
           if (!found) {
             await send('Agente no disponible.');
             return json({ status: 'agent_not_found' });
           }
           selectedAgentId = String(found.id);
-          routedMessage = messageParts.join(' ').trim();
+          routedMessage = argumentWords.slice(consumedWords).join(' ').trim();
           await env.WORKER_KV.put(stateKey, selectedAgentId);
           if (!routedMessage) {
             await send(`Seleccionado: ${found.name || found.id}`);
@@ -146,7 +155,7 @@ export default {
         if (command !== 'agente' && command !== 'agent') {
           // Match a friendly alias based on the configured agent name, including names with spaces.
           // Example: "$dismary cosina hola" selects "dismary cosina" and routes "hola".
-          const words = [command, ...argument.split(/\\s+/).filter(Boolean)];
+          const words = [command, ...argument.split(/\s+/).filter(Boolean)];
           let directAgent: any = null;
           let consumedWords = 0;
           for (let count = words.length; count >= 1; count--) {
