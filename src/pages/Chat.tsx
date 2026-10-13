@@ -77,8 +77,7 @@ const SvgPreview = ({ source }: { source: string }) => {
     <button type="button" onClick={() => { setVisible(value => !value); setImageError(false); }} className="inline-flex items-center gap-2 rounded-lg border border-cyan-800 bg-cyan-950/50 px-3 py-2 text-xs font-medium text-cyan-300 transition-colors hover:bg-cyan-900/60">
       {visible ? 'Ocultar vista SVG' : 'Ver SVG'}
     </button>
-    {visible && <div className="mt-3 overflow-hidden rounded-xl border border-slate-700 bg-slate-900">      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-700 px-3 py-2">
-        <span className="text-xs font-medium text-slate-300">Vista previa SVG</span>
+    {visible && <div className="mt-3 overflow-hidden rounded-xl border border-slate-700 bg-slate-900">      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-700 px-3 py-2">        <span className="text-xs font-medium text-slate-300">Vista previa SVG</span>
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-[10px] text-slate-500">Cuadrícula = transparencia</span>
           <button type="button" onClick={() => void copySvg()} className="rounded-md border border-slate-700 px-2 py-1 text-[11px] text-slate-300 hover:bg-slate-800">{copied ? '¡Copiado!' : 'Copiar SVG'}</button>
@@ -157,8 +156,7 @@ export const ChatPage = () => {
   const [conversations, setConversations] = useState<Conversation[]>(readConversations);
   const [activeConversationId, setActiveConversationId] = useState('');
   const [selectedAgentId, setSelectedAgentId] = useState('');  const [targetMode, setTargetMode] = useState<'agent' | 'model'>('agent');
-  const [selectedModelId, setSelectedModelId] = useState('');
-  const [temporaryProvider, setTemporaryProvider] = useState('openai');
+  const [selectedModelId, setSelectedModelId] = useState('');  const [temporaryProvider, setTemporaryProvider] = useState('openai');
   const [temporaryModelId, setTemporaryModelId] = useState('');
   const [temporaryApiKey, setTemporaryApiKey] = useState('');
   const [targetSearch, setTargetSearch] = useState('');
@@ -210,7 +208,9 @@ export const ChatPage = () => {
       // Consultar el catálogo con los datos del proveedor elegido evita depender de una sincronización de configuración previa.
       const list = await fetchProviderCatalog(workerUrl, provider) as CatalogModel[];
       setCatalogModels(list);
-      setSelectedModelId(current => list.some(item => item.id === current) ? current : (list[0]?.id || ''));
+      setSelectedModelId(current => imageMode
+        ? (list.find(item => (item.outputModalities || []).includes('image') || /flux|imagen|stable[ ._-]?diffusion|sdxl|image[ ._-]?generation|dall[ ._-]?e|nano[ ._-]?banana|kandinsky|playground/i.test(`${item.name} ${item.id}`))?.id || '')
+        : (list.some(item => item.id === current) ? current : (list[0]?.id || '')));
       if (!list.length) setError('El proveedor respondió, pero no ofreció modelos disponibles.');
     } catch (e: any) {
       setCatalogModels([]);
@@ -237,8 +237,7 @@ export const ChatPage = () => {
 
   useEffect(() => {
     // Keep conversation history lightweight: file bytes stay in memory, not localStorage.    try {
-      const compact = conversations.map(item => ({
-        ...item,
+      const compact = conversations.map(item => ({        ...item,
         messages: item.messages.map(entry => ({
           ...entry,
           attachments: entry.attachments?.map(file => ({ name: file.name, mimeType: file.mimeType, size: file.size, url: file.url })),
@@ -317,8 +316,7 @@ export const ChatPage = () => {
         continue;
       }
       try {
-        const dataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();          reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('No se pudo leer el archivo.'));
+        const dataUrl = await new Promise<string>((resolve, reject) => {          const reader = new FileReader();          reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('No se pudo leer el archivo.'));
           reader.onerror = () => reject(new Error('No se pudo leer el archivo.'));
           reader.readAsDataURL(file);
         });
@@ -397,8 +395,7 @@ ${agents.map(agent => `• $${aliasFor(agent)} — ${agent.name}`).join('\\n')}`
       content: rawText || (outgoingAttachments.length ? 'Archivo adjunto' : ''),
       createdAt: now,
       attachments: outgoingAttachments.map(item => ({ ...item, size: Math.floor(item.data.length * 3 / 4) })),
-    };    let conversation = activeConversation;
-    if (!conversation) {
+    };    let conversation = activeConversation;    if (!conversation) {
       conversation = { id: makeId(), title: rawText.length > 42 ? `${rawText.slice(0, 42).trim()}…` : rawText, agentId: mode === 'agent' ? targetId : '', targetMode: mode, targetId, ...(mode === 'model' ? { targetProviderId: providerIdForRequest } : {}), messages: [], updatedAt: now };
       setActiveConversationId(conversation.id);
       setConversations(current => [conversation!, ...current]);
@@ -476,9 +473,10 @@ ${agents.map(agent => `• $${aliasFor(agent)} — ${agent.name}`).join('\\n')}`
         <div className="flex min-w-0 items-center gap-2"><button onClick={() => setSidebarOpen(value => !value)} title={sidebarOpen ? 'Ocultar conversaciones' : 'Mostrar conversaciones'} className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white">{sidebarOpen ? <PanelLeftClose size={18}/> : <PanelLeftOpen size={18}/>}</button><div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-cyan-950 text-cyan-300"><Bot size={17}/></div><div className="min-w-0"><p className="truncate text-sm font-semibold">{activeConversation ? activeConversation.title : 'Nuevo chat'}</p><p className="text-[11px] text-slate-500">Conversaciones separadas por agente o modelo</p></div></div>
         <div className="flex max-w-[78%] items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-900 p-1.5 sm:gap-2 sm:px-3 sm:py-2">
           <button type="button" title="Buscar modelos para generar imágenes" aria-pressed={imageMode} onClick={() => {
-            setImageMode(true); setTargetMode('model'); setTargetSearch(''); setError('');
-            if (activeConversation) updateConversationTarget(activeConversation.id, 'model', selectedModelId, selectedProviderId);
-          }} className={`inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1.5 text-xs transition-colors ${imageMode ? 'bg-violet-600 text-white' : 'text-violet-300 hover:bg-slate-800'}`}><ImageIcon size={15}/><span className="hidden sm:inline">Imágenes</span></button>
+            const imageModel = catalogModels.find(model => (model.outputModalities || []).includes('image') || /flux|imagen|stable[ ._-]?diffusion|sdxl|image[ ._-]?generation|dall[ ._-]?e|nano[ ._-]?banana|kandinsky|playground/i.test(`${model.name} ${model.id}`));
+            const nextModelId = imageModel?.id || '';
+            setImageMode(true); setTargetMode('model'); setTargetSearch(''); setSelectedModelId(nextModelId); setError('');
+            if (activeConversation) updateConversationTarget(activeConversation.id, 'model', nextModelId, selectedProviderId);          }} className={`inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1.5 text-xs transition-colors ${imageMode ? 'bg-violet-600 text-white' : 'text-violet-300 hover:bg-slate-800'}`}><ImageIcon size={15}/><span className="hidden sm:inline">Imágenes</span></button>
           <select aria-label="Tipo de destino" value={activeConversation ? (activeConversation.targetMode || 'agent') : targetMode} onChange={event => {
             const next = event.target.value as 'agent' | 'model';            setTargetMode(next); if (next !== 'model') setImageMode(false); setError('');
             if (activeConversation) {
@@ -557,8 +555,7 @@ ${agents.map(agent => `• $${aliasFor(agent)} — ${agent.name}`).join('\\n')}`
             </> : <span title="El proveedor no publicó metadatos suficientes para verificar las modalidades de entrada" className="rounded-md border border-amber-900/70 bg-amber-950/30 px-1.5 py-1 text-[10px] text-amber-300">Capacidades sin verificar</span>}
           </div>}
           {pendingAttachments.length > 0 && <div className="flex flex-wrap gap-2 border-b border-slate-800 px-3 py-2">{pendingAttachments.map((file, index) => <div key={`${file.name}-${index}`} className="inline-flex max-w-full items-center gap-2 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-300"><Paperclip size={13} className="shrink-0 text-cyan-300"/><span className="max-w-[180px] truncate">{file.name}</span><button type="button" aria-label={`Quitar ${file.name}`} onClick={() => setPendingAttachments(current => current.filter((_, i) => i !== index))} className="rounded p-0.5 text-slate-500 hover:text-red-300"><X size={13}/></button></div>)}</div>}
-          <input ref={fileInputRef} type="file" multiple accept="image/jpeg,image/png,image/gif,image/webp,audio/*,video/*,application/pdf" onChange={event => void handleFileSelection(event)} className="hidden" />
-          <textarea ref={textareaRef} value={message} onChange={event => setMessage(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void handleSend(); } }} placeholder={effectiveMode === 'model' ? `Escribe a ${temporarySelected ? temporaryLabel : (selectedCatalogModel?.name || selectedModel?.name || 'el modelo')}…` : selectedAgent ? `Escribe a ${selectedAgent.name}…` : 'Activa o crea un agente para empezar…'} rows={2} disabled={(effectiveMode === 'model' ? (!selectedCatalogModel && !selectedModel && !temporarySelected) : !selectedAgent) || sending} className="max-h-40 min-h-[58px] w-full resize-y bg-transparent px-4 pt-4 pb-2 text-sm text-slate-100 placeholder:text-slate-500 outline-none disabled:opacity-50"/>
+          <input ref={fileInputRef} type="file" multiple accept="image/jpeg,image/png,image/gif,image/webp,audio/*,video/*,application/pdf" onChange={event => void handleFileSelection(event)} className="hidden" />          <textarea ref={textareaRef} value={message} onChange={event => setMessage(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void handleSend(); } }} placeholder={effectiveMode === 'model' ? `Escribe a ${temporarySelected ? temporaryLabel : (selectedCatalogModel?.name || selectedModel?.name || 'el modelo')}…` : selectedAgent ? `Escribe a ${selectedAgent.name}…` : 'Activa o crea un agente para empezar…'} rows={2} disabled={(effectiveMode === 'model' ? (!selectedCatalogModel && !selectedModel && !temporarySelected) : !selectedAgent) || sending} className="max-h-40 min-h-[58px] w-full resize-y bg-transparent px-4 pt-4 pb-2 text-sm text-slate-100 placeholder:text-slate-500 outline-none disabled:opacity-50"/>
           <div className="flex items-center justify-between gap-3 px-3 pb-3"><div className="flex min-w-0 items-center gap-2"><button type="button" onClick={() => fileInputRef.current?.click()} disabled={sending || (effectiveMode === 'model' && !selectedCatalogModel && !selectedModel && !temporarySelected) || (effectiveMode === 'agent' && !selectedAgent)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-40" title="Adjuntar imagen, audio, vídeo o PDF"><Paperclip size={16}/></button><p className="text-[10px] text-slate-600">Enter para enviar · Shift + Enter para nueva línea</p></div><button type="submit" disabled={(!message.trim() && !pendingAttachments.length) || (effectiveMode === 'model' ? (temporarySelected ? !temporaryReady : (!selectedCatalogModel && !selectedModel)) : !selectedAgent) || sending} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-cyan-600 text-white transition-colors hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-40" title="Enviar mensaje">{sending ? <LoaderCircle size={17} className="animate-spin"/> : <Send size={16}/>}</button></div>        </form><p className="mt-2 text-center text-[10px] text-slate-600">En modo Agente se aplica su personalidad; en modo Modelo se consulta directamente. Los modelos temporales no se registran y requieren volver a introducir la clave al recargar.</p>
       </div></div>
     </section>
