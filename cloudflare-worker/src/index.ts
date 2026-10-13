@@ -117,7 +117,7 @@ export default {
               const description = String(item.description || '').trim();
               return `${index + 1}. ${label} — ${alias}${description ? `\\n   ${description.slice(0, 120)}` : ''}`;
             });
-            await send(lines.length ? `🤖 Agentes disponibles:\\n\\n${lines.join('\\n')}\\n\\nUsa ${'agente'} nombre para seleccionarlo o ${'nombre'} tu mensaje para consultarlo directamente.` : 'No hay agentes activos. Activa o crea uno desde BOT IA PC.');
+            await send(lines.length ? `🤖 Agentes disponibles:\\n\\n${lines.join('\\n')}\\n\\nUsa $agente nombre para seleccionarlo o $nombre tu mensaje para consultarlo directamente.` : 'No hay agentes activos. Activa o crea uno desde BOT IA PC.');
             return json({ status: 'agent_list' });
           }
           const requested = normalizeCommand(argument);
