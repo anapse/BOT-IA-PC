@@ -203,7 +203,7 @@ export default {
       const send = async (text: string) => fetch(`https://api.telegram.org/bot${connection.botToken}/sendMessage`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: chatId, text }) });
       const allAgents = Array.isArray(config.agents) ? config.agents : [];
       const configuredAgentIds = Array.isArray(connection.agentIds) && connection.agentIds.length ? connection.agentIds.map(String) : (connection.agentId ? [String(connection.agentId)] : []);
-      const activeAgents = allAgents.filter((item: any) => (!item?.status || item.status === 'activo') && configuredAgentIds.includes(String(item.id)));
+      const activeAgents = allAgents.filter((item: any) => !item?.status || item.status === 'activo');
       const normalizeCommand = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
       const stateKey = `telegram:selected-agent:${String(connection.botToken).slice(-10)}:${String(chatId)}`;
       const commandMatch = message.match(/^\$(\S+)(?:\s+([\s\S]*))?$/);
