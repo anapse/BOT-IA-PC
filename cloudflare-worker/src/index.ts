@@ -125,8 +125,7 @@ export default {
           if (!argument || requested === 'list' || requested === 'lista') {
             const lines = activeAgents.map((item: any) => {
               const label = String(item.name || item.nombre || item.id || 'Agente');
-              const alias = normalizeCommand(String(item.id || item.name || item.nombre || ''));
-              return `• ${label} — $${alias}`;
+              return `• ${label} — ${label}`;
             });
             await send(lines.length ? `Agentes disponibles:\n${lines.join('\n')}` : 'No hay agentes activos.');
             return json({ status: 'agent_list' });
@@ -145,10 +144,25 @@ export default {
           }
         }
         if (command !== 'agente' && command !== 'agent') {
-          const directAgent = activeAgents.find((item: any) => normalizeCommand(String(item.name || item.nombre || '')) === command || normalizeCommand(String(item.id || '')) === command);
+          // Match a friendly alias based on the configured agent name, including names with spaces.
+          // Example: "$dismary cosina hola" selects "dismary cosina" and routes "hola".
+          const words = [command, ...argument.split(/\\s+/).filter(Boolean)];
+          let directAgent: any = null;
+          let consumedWords = 0;
+          for (let count = words.length; count >= 1; count--) {
+            const candidate = words.slice(0, count).join(' ');
+            directAgent = activeAgents.find((item: any) =>
+              normalizeCommand(String(item.name || item.nombre || '')) === normalizeCommand(candidate) ||
+              normalizeCommand(String(item.id || '')) === normalizeCommand(candidate)
+            );
+            if (directAgent) {
+              consumedWords = count;
+              break;
+            }
+          }
           if (directAgent) {
             selectedAgentId = String(directAgent.id);
-            routedMessage = argument;
+            routedMessage = words.slice(consumedWords).join(' ').trim();
             await env.WORKER_KV.put(stateKey, selectedAgentId);
             if (!routedMessage) {
               await send(`Seleccionado: ${directAgent.name || directAgent.id}`);
