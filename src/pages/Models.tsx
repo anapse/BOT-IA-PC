@@ -50,14 +50,16 @@ export const ModelsPage = () => {
     const workerUrl = String(workerSettings?.value || 'https://bot-ia-pc.elherreroanapse.workers.dev').trim().replace(/\/$/, '');
     if (!workerUrl) throw new Error('No hay una URL de Worker configurada.');
 
-    const [agents, currentModels, connections] = await Promise.all([
+    const [agents, currentModels, connections, providers] = await Promise.all([
       getCollectionDataStrict('agents'),
       getCollectionDataStrict('modelConfigs'),
       getCollectionDataStrict('telegramConnections'),
+      getCollectionDataStrict('providers'),
     ]);
     await syncWorkerConfig(workerUrl, {
       agents: agents || [],
       models: currentModels || [],
+      providers: providers || [],
       connections: connections || [],
       syncedAt: new Date().toISOString(),
     });
