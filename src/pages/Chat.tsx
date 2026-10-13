@@ -269,8 +269,12 @@ export const ChatPage = () => {
   const temporaryLabel = activeTemporaryModel?.name || (effectiveTemporaryModelId.trim() ? `${effectiveTemporaryModelId.trim()} · temporal` : 'Modelo temporal');
   const filteredAgents = agents.filter(agent => normalizeCommand(agent.name).includes(normalizeCommand(targetSearch)));
   const filteredModels = catalogModels.filter(model => {
+    const selectedProviderType = String(providers.find(provider => provider.id === effectiveProviderId)?.type || '').toLowerCase();
+    // OpenRouter's server-side image_generation tool can be invoked by any supported text model;
+    // do not hide those models just because their own output modality is text.
+    const openRouterImageTool = imageMode && selectedProviderType.includes('openrouter');
     const imageCapable = (model.outputModalities || []).includes('image') || /flux|imagen|stable[ ._-]?diffusion|sdxl|image[ ._-]?generation|dall[ ._-]?e|nano[ ._-]?banana|kandinsky|playground/i.test(`${model.name} ${model.id}`);
-    return (!imageMode || imageCapable) && normalizeCommand(`${model.name} ${model.id}`).includes(normalizeCommand(targetSearch));
+    return (!imageMode || openRouterImageTool || imageCapable) && normalizeCommand(`${model.name} ${model.id}`).includes(normalizeCommand(targetSearch));
   });
   const currentMessages = activeConversation?.messages || [];
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, [currentMessages.length, sending]);
