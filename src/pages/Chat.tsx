@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Bot, Plus, Send, PanelLeftClose, PanelLeftOpen, MessageSquare, Trash2, Sparkles, ChevronDown, LoaderCircle, UserRound, AlertCircle } from 'lucide-react';
+import { Bot, Plus, Send, PanelLeftClose, PanelLeftOpen, MessageSquare, Trash2, Sparkles, ChevronDown, LoaderCircle, UserRound, AlertCircle, Image as ImageIcon, Mic, Video } from 'lucide-react';
 import { subscribeCollection, getDocData } from '../services/firebase/db';
 import { sendAgentChatMessage, fetchProviderCatalog } from '../services/worker/client';
 
 type Agent = { id: string; name: string; description?: string; model?: string; status?: 'activo' | 'inactivo' | 'pausado'; systemPrompt?: string; personality?: string };
 type ModelOption = { id: string; name: string; modelId?: string; provider?: string; connectionType?: 'cloud' | 'local'; status?: 'activo' | 'inactivo'; apiKey?: string };
 type ProviderOption = { id: string; name: string; type: string; endpoint?: string; apiKey?: string; status: 'activo' | 'inactivo' };
-type CatalogModel = { id: string; name: string };
+type CatalogModel = { id: string; name: string; inputModalities?: string[]; outputModalities?: string[]; inputModalitiesKnown?: boolean; outputModalitiesKnown?: boolean };
 type ChatMessage = { id: string; role: 'user' | 'assistant'; content: string; createdAt: string; model?: string };
 type TemporaryModel = { provider: string; modelId: string; name: string };
 type Conversation = { id: string; title: string; agentId: string; targetMode?: 'agent' | 'model'; targetId?: string; targetProviderId?: string; temporaryModel?: TemporaryModel; messages: ChatMessage[]; updatedAt: string };
@@ -291,6 +291,16 @@ ${agents.map(agent => `• $${aliasFor(agent)} — ${agent.name}`).join('\\n')}`
       <div className="px-3 pb-3 sm:px-5 sm:pb-5"><div className="mx-auto max-w-3xl">
         {error && <div className="mb-3 flex items-start gap-2 rounded-xl border border-red-900/70 bg-red-950/30 px-3 py-2.5 text-xs leading-5 text-red-300"><AlertCircle size={15} className="mt-0.5 shrink-0"/>{error}</div>}
         <form onSubmit={handleSend} className="rounded-2xl border border-slate-700 bg-slate-900 shadow-lg shadow-black/20 focus-within:border-slate-500">
+          {effectiveMode === 'model' && <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-800 px-4 py-2.5">
+            <span className="mr-1 text-[10px] font-medium text-slate-400">Modelo:</span>
+            <span className="max-w-[220px] truncate text-[11px] font-semibold text-slate-200" title={temporarySelected ? temporaryLabel : (selectedCatalogModel?.name || selectedModel?.name || 'Modelo seleccionado')}>{temporarySelected ? temporaryLabel : (selectedCatalogModel?.name || selectedModel?.name || 'Modelo seleccionado')}</span>
+            {selectedCatalogModel?.inputModalitiesKnown ? <>
+              {(selectedCatalogModel.inputModalities || []).includes('image') && <span title="Acepta imágenes como entrada" className="inline-flex items-center gap-1 rounded-md border border-cyan-800/70 bg-cyan-950/50 px-1.5 py-1 text-[10px] text-cyan-300"><ImageIcon size={12}/> Imagen</span>}
+              {(selectedCatalogModel.inputModalities || []).includes('audio') && <span title="Acepta audio como entrada" className="inline-flex items-center gap-1 rounded-md border border-cyan-800/70 bg-cyan-950/50 px-1.5 py-1 text-[10px] text-cyan-300"><Mic size={12}/> Audio</span>}
+              {(selectedCatalogModel.inputModalities || []).includes('video') && <span title="Acepta vídeo como entrada" className="inline-flex items-center gap-1 rounded-md border border-cyan-800/70 bg-cyan-950/50 px-1.5 py-1 text-[10px] text-cyan-300"><Video size={12}/> Vídeo</span>}
+              {!(selectedCatalogModel.inputModalities || []).some(modality => ['image', 'audio', 'video'].includes(modality)) && <span className="rounded-md border border-slate-700 px-1.5 py-1 text-[10px] text-slate-400">Solo texto</span>}
+            </> : <span title="El proveedor no publicó metadatos suficientes para verificar las modalidades de entrada" className="rounded-md border border-amber-900/70 bg-amber-950/30 px-1.5 py-1 text-[10px] text-amber-300">Capacidades sin verificar</span>}
+          </div>}
           <textarea ref={textareaRef} value={message} onChange={event => setMessage(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void handleSend(); } }} placeholder={effectiveMode === 'model' ? `Escribe a ${temporarySelected ? temporaryLabel : (selectedCatalogModel?.name || selectedModel?.name || 'el modelo')}…` : selectedAgent ? `Escribe a ${selectedAgent.name}…` : 'Activa o crea un agente para empezar…'} rows={2} disabled={(effectiveMode === 'model' ? (!selectedCatalogModel && !selectedModel && !temporarySelected) : !selectedAgent) || sending} className="max-h-40 min-h-[58px] w-full resize-y bg-transparent px-4 pt-4 pb-2 text-sm text-slate-100 placeholder:text-slate-500 outline-none disabled:opacity-50"/>
           <div className="flex items-center justify-between gap-3 px-3 pb-3"><p className="text-[10px] text-slate-600">Enter para enviar · Shift + Enter para nueva línea</p><button type="submit" disabled={!message.trim() || (effectiveMode === 'model' ? (temporarySelected ? !temporaryReady : (!selectedCatalogModel && !selectedModel)) : !selectedAgent) || sending} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-cyan-600 text-white transition-colors hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-40" title="Enviar mensaje">{sending ? <LoaderCircle size={17} className="animate-spin"/> : <Send size={16}/>}</button></div>
         </form><p className="mt-2 text-center text-[10px] text-slate-600">En modo Agente se aplica su personalidad; en modo Modelo se consulta directamente. Los modelos temporales no se registran y requieren volver a introducir la clave al recargar.</p>
