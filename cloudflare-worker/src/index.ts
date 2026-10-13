@@ -160,9 +160,15 @@ export default {
       let input: any;
       try { input = await request.json(); } catch { return json({ error: 'El cuerpo debe ser JSON válido.' }, 400); }
       const providerId = typeof input?.providerId === 'string' ? input.providerId : '';
-      const config = await getStorage(env).getConfig();
-      const provider = Array.isArray(config.providers) ? config.providers.find((item: any) => item?.id === providerId && item?.status === 'activo') : null;
-      if (!provider) return json({ error: 'Proveedor activo no encontrado en la configuración sincronizada.' }, 404);
+      // If the caller supplies the just-read Firebase snapshot, use it for this request.
+      // KV propagation between edge locations is not guaranteed to be immediate.
+      const providers = Array.isArray(input?.providers)
+        ? input.providers
+        : (await getStorage(env).getConfig()).providers;
+      const provider = Array.isArray(providers)
+        ? providers.find((item: any) => String(item?.id || '') === providerId && item?.status === 'activo')
+        : null;
+      if (!provider) return json({ error: 'Proveedor activo no encontrado en Firebase ni en la configuración sincronizada.' }, 404);
       const apiKey = typeof provider.apiKey === 'string' ? provider.apiKey.trim() : '';
       const type = String(provider.type || '').toLowerCase();
       const base = String(provider.endpoint || '').replace(/\/+$/, '');
