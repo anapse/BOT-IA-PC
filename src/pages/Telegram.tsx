@@ -118,8 +118,8 @@ export const TelegramPage = () => {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || (!editingConnection && !botToken.trim())) {
-      setErrorMsg(editingConnection ? 'El nombre del bot es obligatorio.' : 'Nombre y Token del bot son obligatorios.');
+    if (!name.trim() || (!editingConnection && !botToken.trim()) || agentIds.length === 0) {
+      setErrorMsg(agentIds.length === 0 ? 'Selecciona al menos un agente para este bot.' : editingConnection ? 'El nombre del bot es obligatorio.' : 'Nombre y Token del bot son obligatorios.');
       return;
     }
     setSaving(true);
@@ -129,7 +129,7 @@ export const TelegramPage = () => {
         const changes: Partial<TelegramConnection> = {
           name: name.trim(),
           botUsername: botUsername.trim(),
-          agentId: agentIds[0] || agentId || '',
+          agentId: agentIds[0],
           agentIds,
           allowedUsers: parseAllowedUsers(allowedUsersText),
         };
@@ -140,8 +140,8 @@ export const TelegramPage = () => {
           name: name.trim(),
           botUsername: botUsername.trim(),
           botToken: botToken.trim(),
-          agentId: agentIds[0] || agentId || (agents[0]?.id || ''),
-          agentIds: agentIds.length ? agentIds : (agentId ? [agentId] : (agents[0]?.id ? [agents[0].id] : [])),
+          agentId: agentIds[0],
+          agentIds,
           allowedUsers: parseAllowedUsers(allowedUsersText),
           status: 'activo',
           createdAt: new Date().toISOString(),
@@ -242,7 +242,7 @@ export const TelegramPage = () => {
                   <div className="mt-4 space-y-2 text-xs">
                     <div className="flex justify-between py-1 border-b border-slate-800/60">
                       <span className="text-slate-500">Agente asignado:</span>
-                      <span className="text-slate-300 font-medium">{assignedAgent?.name || 'Cualquiera'}</span>
+                      <span className="text-slate-300 font-medium">{Array.isArray(conn.agentIds) && conn.agentIds.length > 1 ? `${conn.agentIds.length} agentes` : assignedAgent?.name || 'Sin agente'}</span>
                     </div>
                     <div className="flex justify-between py-1 border-b border-slate-800/60">
                       <span className="text-slate-500">Token:</span>
