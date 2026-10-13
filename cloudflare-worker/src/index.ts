@@ -332,6 +332,10 @@ export default {
             const { apiKey, ...safeModel } = model || {};
             return safeModel;
           }) : [],
+          providers: Array.isArray(config.providers) ? config.providers.map((provider: any) => {
+            const { apiKey, ...safeProvider } = provider || {};
+            return safeProvider;
+          }) : [],
         };
         return json({ status: 'ok', config: safeConfig });
       }
