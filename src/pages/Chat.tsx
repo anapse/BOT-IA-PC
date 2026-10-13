@@ -54,7 +54,9 @@ export const ChatPage = () => {
     const unsubscribeProviders = subscribeCollection('providers', data => {
       const active = (data as ProviderOption[]).filter(provider => provider.status === 'activo');
       setProviders(active);
-      setSelectedProviderId(current => current && active.some(provider => provider.id === current) ? current : (active[0]?.id || ''));
+      const nextId = active.some(provider => provider.id === selectedProviderId) ? selectedProviderId : (active[0]?.id || '');
+      setSelectedProviderId(nextId);
+      if (nextId) void refreshProviderModels(nextId);
     });
     const unsubscribeModels = subscribeCollection('modelConfigs', data => {
       const availableModels = (data as ModelOption[]).filter(model => (!model.status || model.status === 'activo') && model.connectionType !== 'local' && Boolean(model.modelId));
