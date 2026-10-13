@@ -218,6 +218,30 @@ export default {
             capabilitiesSource,
           } : null;
         }).filter(Boolean).sort((a: any, b: any) => a.name.localeCompare(b.name));
+        // NVIDIA's /v1/models endpoint is primarily a chat catalog and can omit visual GenAI models.
+        // Add documented image candidates separately; actual access still depends on the NVIDIA account/key.
+        if (provider.includes('nvidia')) {
+          const knownVisualModels = [
+            { id: 'black-forest-labs/flux.2-klein-4b', name: 'FLUX.2 Klein 4B · NVIDIA Visual GenAI', inputModalities: ['text'], outputModalities: ['image'], inputModalitiesKnown: true, outputModalitiesKnown: true, capabilitiesSource: 'provider' },
+            { id: 'stability-ai/stable-diffusion-3.5-large', name: 'Stable Diffusion 3.5 Large · NVIDIA Visual GenAI', inputModalities: ['text'], outputModalities: ['image'], inputModalitiesKnown: true, outputModalitiesKnown: true, capabilitiesSource: 'provider' },
+          ];
+          for (const candidate of knownVisualModels) {
+            if (!models.some((item: any) => String(item.id).toLowerCase() === candidate.id.toLowerCase())) models.push(candidate);
+          }
+        }
+        // Google may omit preview/rollout image models from models.list even when their IDs are documented.
+        if (provider.includes('google') || provider.includes('gemini')) {
+          const knownGoogleImageModels = [
+            { id: 'gemini-nano-banana-2.1', name: 'Nano Banana 2.1 (Gemini Image)', inputModalities: ['text', 'image'], outputModalities: ['image'], inputModalitiesKnown: true, outputModalitiesKnown: true, capabilitiesSource: 'provider' },
+            { id: 'gemini-3-pro-image', name: 'Nano Banana Pro (Gemini 3 Pro Image)', inputModalities: ['text', 'image'], outputModalities: ['image'], inputModalitiesKnown: true, outputModalitiesKnown: true, capabilitiesSource: 'provider' },
+            { id: 'gemini-3.1-flash-image', name: 'Gemini 3.1 Flash Image', inputModalities: ['text', 'image'], outputModalities: ['image'], inputModalitiesKnown: true, outputModalitiesKnown: true, capabilitiesSource: 'provider' },
+            { id: 'gemini-2.5-flash-image', name: 'Nano Banana (Gemini 2.5 Flash Image)', inputModalities: ['text', 'image'], outputModalities: ['image'], inputModalitiesKnown: true, outputModalitiesKnown: true, capabilitiesSource: 'provider' },
+          ];
+          for (const candidate of knownGoogleImageModels) {
+            if (!models.some((item: any) => String(item.id).toLowerCase() === candidate.id.toLowerCase())) models.push(candidate);
+          }
+        }
+        models.sort((a: any, b: any) => a.name.localeCompare(b.name));
         return json({ models, count: models.length });
       } catch { return json({ error: 'No se pudo consultar el catálogo del proveedor.' }, 502); }
     }
@@ -692,9 +716,18 @@ export default {
         isAnthropic = provider.includes('anthropic') || provider === 'claude';
         isOpenAICompatible = provider === 'openai' || provider === 'openai-compatible' || provider.includes('openrouter') || provider.includes('nvidia') || provider.includes('deepseek') || provider.includes('groq') || provider.includes('together') || provider.includes('mistral') || provider.includes('xai');
         if (!isGemini && !isAnthropic && !isOpenAICompatible) return json({ error: 'Proveedor no compatible. Usa OpenAI, Anthropic, Google Gemini, OpenRouter o NVIDIA NIM.' }, 400);
-        if (isGemini) modelId = modelId.replace(/^models\//i, '');
+        if (isGemini) {
+          modelId = modelId.replace(/^models\//i, '');
+          // Backward-compatible aliases used by older Nano Banana naming.
+          const googleImageAliases: Record<string, string> = {
+            'nano-banana-pro-preview': 'gemini-3-pro-image',
+            'nano-banana-pro': 'gemini-3-pro-image',
+            'nano-banana': 'gemini-2.5-flash-image',
+          };
+          modelId = googleImageAliases[modelId.toLowerCase()] || modelId;
+        }
         if (!modelId) return json({ error: 'Introduce el ID técnico del modelo.' }, 400);
-        if (isGemini && !/^(gemini|imagen|veo)-[a-zA-Z0-9._-]+$/i.test(modelId)) return json({ error: `El ID de modelo Google no es válido: "${modelId}".` }, 400);
+        if (isGemini && !/^(gemini|imagen|veo)-[a-zA-Z0-9._-]+$/i.test(modelId)) return json({ error: `El ID de modelo Google no es válido: "${modelId}". Usa un ID oficial como gemini-3-pro-image o gemini-nano-banana-2.1.` }, 400);
         if (isGemini && /^veo-/i.test(modelId)) return json({ error: 'La generación de vídeo Veo utiliza una operación asíncrona específica y todavía no está integrada en el chat. Este modelo no se enviará por la ruta de texto.' }, 415);
         if (isGemini && /^imagen-/i.test(modelId) && attachments.length) return json({ error: 'Este modelo Imagen genera imágenes a partir de texto y no admite los adjuntos actuales en esta ruta. Quita los archivos y envía un prompt de texto.' }, 415);
 
@@ -828,7 +861,11 @@ export default {
         const result: any = await upstream.json().catch(() => ({}));
         if (!upstream.ok) {
           const apiMessage = typeof result?.error?.message === 'string' ? result.error.message : (typeof result?.error?.type === 'string' ? result.error.type : (typeof result?.detail === 'string' ? result.detail : (typeof result?.message === 'string' ? result.message : 'El proveedor rechazó la solicitud.')));
-          return json({ error: `${provider.toUpperCase()} (HTTP ${upstream.status}): ${apiMessage.slice(0, 300)}` }, upstream.status === 429 ? 429 : 502);
+          const isOpenRouterLimit = provider.includes('openrouter') && upstream.status === 403 && /key limit exceeded|total limit|limit.*\$0\.00/i.test(apiMessage);
+          const friendlyMessage = isOpenRouterLimit
+            ? 'La API key de OpenRouter alcanzó su límite total (posiblemente $0.00). Cambia el límite/crédito de la clave en OpenRouter o usa otro proveedor; cambiar el modelo no lo soluciona.'
+            : apiMessage.slice(0, 300);
+          return json({ error: `${provider.toUpperCase()} (HTTP ${upstream.status}): ${friendlyMessage}` }, upstream.status === 429 ? 429 : 502);
         }
         const reply = isAnthropic
           ? (Array.isArray(result?.content) ? result.content.map((part: any) => typeof part?.text === 'string' ? part.text : '').join('').trim() : '')
