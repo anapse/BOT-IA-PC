@@ -344,7 +344,11 @@ export const ChatPage = () => {
     if ((!rawText && !outgoingAttachments.length) || sending) return;
     setError('');
 
-    let outgoingText = rawText;
+    // Image mode must be explicit in the request text because OpenRouter's image tool
+    // and other providers route generation based on the prompt as well as the selected model.
+    let outgoingText = imageMode && (activeConversation?.targetMode || targetMode) === 'model' && rawText
+      ? (/^(?:genera|generar|crea|crear|dibuja|dibujar|hazme|haz|produce|make|generate|create|draw|design)\b/i.test(rawText) ? rawText : `Genera una imagen: ${rawText}`)
+      : rawText;
     let mode: 'agent' | 'model' = activeConversation?.targetMode || targetMode;
     let targetId = activeConversation?.targetId || activeConversation?.agentId || (mode === 'agent' ? selectedAgentId : selectedModelId);
     const providerIdForRequest = activeConversation?.targetProviderId || selectedProviderId;
