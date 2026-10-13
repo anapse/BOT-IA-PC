@@ -82,7 +82,8 @@ export const ChatPage = () => {
       // antes de consultar el catálogo, sin volver a sincronizar ni tocar los webhooks de Telegram.
       const savedProviders = await getCollectionDataStrict('providers');
       await syncWorkerProviders(workerUrl, savedProviders);
-      const list = await fetchProviderCatalog(workerUrl, provider.id) as CatalogModel[];
+      // Usar la instantánea recién leída de Firebase evita depender de la propagación inmediata de KV.
+      const list = await fetchProviderCatalog(workerUrl, provider.id, savedProviders) as CatalogModel[];
       setCatalogModels(list);
       setSelectedModelId(current => list.some(item => item.id === current) ? current : (list[0]?.id || ''));
       if (!list.length) setError('El proveedor respondió, pero no ofreció modelos disponibles.');
