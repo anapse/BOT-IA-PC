@@ -16,34 +16,78 @@ const aliasFor = (agent: Agent) => normalizeCommand(agent.name).split(' ')[0];
 const STORAGE_KEY = 'bot-ia-pc-chat-conversations-v1';
 const makeId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
-// Render image links returned by models as actual images instead of showing Markdown literally.
-const renderMessageContent = (content: string) => {
-  const imagePattern = /!\[([^\]]*)\]\((https?:\/\/[^\s)]+|data:image\/[^\s)]+)\)/g;
-  const parts: any[] = [];
+// Preview SVG snippets from text models without executing embedded scripts.
+const normalizeSvg = (value: string) => value
+  .replace(/\\</g, '<')
+  .replace(/\\>/g, '>')
+  .replace(/\\(["'])/g, '$1')
+  .replace(/<script\b[\s\S]*?<\/script\s*>/gi, '')
+  .replace(/<(foreignObject|iframe|object|embed)\b[\s\S]*?<\/\1\s*>/gi, '')
+  .replace(/\s on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+  .replace(/\s(?:href|xlink:href)\s*=\s*("https?:[^"]*"|'https?:[^']*')/gi, '');
+
+const SvgPreview = ({ source }: { source: string }) => {
+  const [visible, setVisible] = useState(false);
+  const [imageError, setImageError] = useState(false);
+  const svg = normalizeSvg(source.trim());
+  const src = \`data:image/svg+xml;charset=utf-8,\${encodeURIComponent(svg)}\`;
+
+  return <div className="my-3 max-w-full">
+    <button type="button" onClick={() => { setVisible(value => !value); setImageError(false); }} className="inline-flex items-center gap-2 rounded-lg border border-cyan-800 bg-cyan-950/50 px-3 py-2 text-xs font-medium text-cyan-300 transition-colors hover:bg-cyan-900/60">
+      {visible ? 'Ocultar vista SVG' : 'Ver SVG'}
+    </button>
+    {visible && <div className="mt-3 overflow-hidden rounded-xl border border-slate-700 bg-slate-900">
+      <div className="flex items-center justify-between border-b border-slate-700 px-3 py-2">
+        <span className="text-xs font-medium text-slate-300">Vista previa SVG</span>
+        <span className="text-[10px] text-slate-500">Fondo cuadriculado = transparencia</span>
+      </div>
+      <div className="flex min-h-48 items-center justify-center p-4" style={{ backgroundColor: '#111827', backgroundImage: 'linear-gradient(45deg, #1f2937 25%, transparent 25%), linear-gradient(-45deg, #1f2937 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #1f2937 75%), linear-gradient(-45deg, transparent 75%, #1f2937 75%)', backgroundSize: '24px 24px', backgroundPosition: '0 0, 0 12px, 12px -12px, -12px 0' }}>
+        {imageError
+          ? <p className="max-w-md text-center text-xs leading-5 text-amber-300">No se pudo representar el SVG. Puede que el código esté incompleto o tenga errores de sintaxis.</p>
+          : <img src={src} alt="Vista previa del SVG generado" onError={() => setImageError(true)} className="max-h-[560px] max-w-full object-contain" />}
+      </div>
+    </div>}
+  </div>;
+};
+
+const MessageContent = ({ content }: { content: string }) => {
+  const pattern = /(\`\`\`(?:svg|xml|html)?[ \t]*\n?[\s\S]*?\`\`\`|(?:\\<|<)svg\b[\s\S]*?(?:\\<\/svg>|<\/svg>)|!\[([^\]]*)\]\((https?:\/\/[^\s)]+|data:image\/[^\s)]+)\))/gi;
+  const parts: React.ReactNode[] = [];
   let cursor = 0;
   let match: RegExpExecArray | null;
-  let imageIndex = 0;
+  let tokenIndex = 0;
 
-  while ((match = imagePattern.exec(content)) !== null) {
+  while ((match = pattern.exec(content)) !== null) {
+    const token = match[0];
     if (match.index > cursor) {
-      parts.push(<span key={`text-${cursor}`} className="whitespace-pre-wrap break-words">{content.slice(cursor, match.index)}</span>);
+      parts.push(<span key={\`text-\${cursor}\`} className="whitespace-pre-wrap break-words">{content.slice(cursor, match.index)}</span>);
     }
-    const alt = match[1]?.trim() || 'Imagen generada';
-    const src = match[2];
-    parts.push(
-      <figure key={`image-${imageIndex++}`} className="my-3 max-w-full">
+
+    if (token.startsWith('\`\`\`')) {
+      const body = token.replace(/^\`\`\`(?:svg|xml|html)?[ \t]*\n?/, '').replace(/\`\`\`$/, '').trim();
+      const normalizedBody = normalizeSvg(body);
+      if (/<svg\b/i.test(normalizedBody) && /<\/svg\s*>/i.test(normalizedBody)) {
+        parts.push(<SvgPreview key={\`svg-\${tokenIndex++}\`} source={normalizedBody} />);
+      } else {
+        parts.push(<span key={\`code-\${tokenIndex++}\`} className="whitespace-pre-wrap break-words">{token}</span>);
+      }
+    } else if (/<svg\b/i.test(normalizeSvg(token)) && /<\/svg\s*>/i.test(normalizeSvg(token))) {
+      parts.push(<SvgPreview key={\`svg-\${tokenIndex++}\`} source={token} />);
+    } else {
+      const alt = match[2]?.trim() || 'Imagen generada';
+      const src = match[3];
+      parts.push(<figure key={\`image-\${tokenIndex++}\`} className="my-3 max-w-full">
         <img src={src} alt={alt} loading="lazy" className="max-h-[560px] max-w-full rounded-xl border border-slate-700 bg-slate-900 object-contain" />
         {alt !== 'Imagen generada' && <figcaption className="mt-1 text-xs text-slate-500">{alt}</figcaption>}
-      </figure>
-    );
-    cursor = imagePattern.lastIndex;
+      </figure>);
+    }
+    cursor = pattern.lastIndex;
   }
 
   if (cursor < content.length) {
-    parts.push(<span key={`text-${cursor}`} className="whitespace-pre-wrap break-words">{content.slice(cursor)}</span>);
+    parts.push(<span key={\`text-\${cursor}\`} className="whitespace-pre-wrap break-words">{content.slice(cursor)}</span>);
   }
-
-  return parts.length ? parts : content;
+  return parts.length ? <>{parts}</> : content;
 };
 const readConversations = (): Conversation[] => {
   try { const value = localStorage.getItem(STORAGE_KEY); return value ? JSON.parse(value) : []; }
@@ -425,7 +469,7 @@ ${agents.map(agent => `• $${aliasFor(agent)} — ${agent.name}`).join('\\n')}`
           <div className="mt-7 grid w-full max-w-xl grid-cols-1 gap-2 sm:grid-cols-2">{['Explícame algo paso a paso','Ayúdame a resolver un problema','Dame ideas para un proyecto','Resume este texto'].map(suggestion => <button key={suggestion} onClick={() => setMessage(suggestion)} className="rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-3 text-left text-xs sm:text-sm text-slate-300 hover:border-slate-600 hover:bg-slate-900 transition-colors">{suggestion}</button>)}</div>
         </div> : <div className="space-y-7 pb-6">{currentMessages.map(item => <div key={item.id} className={`flex gap-3 sm:gap-4 ${item.role === 'user' ? 'justify-end' : 'justify-start'}`}>
           {item.role === 'assistant' && <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-cyan-950 text-cyan-300"><Bot size={17}/></div>}
-          <div className={`max-w-[88%] min-w-0 sm:max-w-[82%] ${item.role === 'user' ? 'rounded-2xl rounded-br-md bg-slate-800 px-4 py-3' : 'pt-1'}`}>{item.role === 'assistant' && <p className="mb-2 text-xs font-semibold text-slate-300">{effectiveMode === 'model' ? (temporarySelected ? temporaryLabel : (selectedCatalogModel?.name || selectedModel?.name || 'Modelo IA')) : (selectedAgent?.name || 'Agente IA')}</p>}{item.content && <div className="text-sm leading-7 text-slate-200">{renderMessageContent(item.content)}</div>}
+          <div className={`max-w-[88%] min-w-0 sm:max-w-[82%] ${item.role === 'user' ? 'rounded-2xl rounded-br-md bg-slate-800 px-4 py-3' : 'pt-1'}`}>{item.role === 'assistant' && <p className="mb-2 text-xs font-semibold text-slate-300">{effectiveMode === 'model' ? (temporarySelected ? temporaryLabel : (selectedCatalogModel?.name || selectedModel?.name || 'Modelo IA')) : (selectedAgent?.name || 'Agente IA')}</p>}{item.content && <div className="text-sm leading-7 text-slate-200">{<MessageContent content={item.content} />}</div>}
             {item.attachments?.length ? <div className="mt-3 flex flex-col gap-2">{item.attachments.map((file, index) => {
               const src = file.url || (file.data ? `data:${file.mimeType};base64,${file.data}` : '');
               return <div key={`${file.name}-${index}`} className="max-w-full">
