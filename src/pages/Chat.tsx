@@ -514,7 +514,12 @@ ${agents.map(agent => `• $${aliasFor(agent)} — ${agent.name}`).join('\\n')}`
       <header className="flex min-h-[62px] items-center justify-between gap-3 border-b border-slate-800 px-3 sm:px-5">
         <div className="flex min-w-0 items-center gap-2"><button onClick={() => setSidebarOpen(value => !value)} title={sidebarOpen ? 'Ocultar conversaciones' : 'Mostrar conversaciones'} className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white">{sidebarOpen ? <PanelLeftClose size={18}/> : <PanelLeftOpen size={18}/>}</button><div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-cyan-950 text-cyan-300"><Bot size={17}/></div><div className="min-w-0"><p className="truncate text-sm font-semibold">{activeConversation ? activeConversation.title : 'Nuevo chat'}</p><p className="text-[11px] text-slate-500">Conversaciones separadas por agente o modelo</p></div></div>
         <div className="flex max-w-[78%] items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-900 p-1.5 sm:gap-2 sm:px-3 sm:py-2">
-          <button type="button" title="Buscar modelos para generar imágenes" aria-pressed={imageMode} onClick={() => {
+          <button type="button" title={imageMode ? "Desactivar selector de imágenes" : "Buscar modelos para generar imágenes"} aria-pressed={imageMode} onClick={() => {
+            if (imageMode) {
+              setImageMode(false);
+              setError('');
+              return;
+            }
             const selectedProviderType = String(providers.find(provider => provider.id === selectedProviderId)?.type || '').toLowerCase();
             const imageModel = catalogModels.find(model => (model.outputModalities || []).includes('image') || /flux|imagen|stable[ ._-]?diffusion|sdxl|image[ ._-]?generation|dall[ ._-]?e|nano[ ._-]?banana|kandinsky|playground/i.test(`${model.name} ${model.id}`));
             const nextModelId = imageModel?.id || (selectedProviderType.includes('openrouter') ? catalogModels[0]?.id || '' : '');
