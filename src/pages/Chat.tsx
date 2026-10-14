@@ -360,7 +360,9 @@ export const ChatPage = () => {
     // Image mode must be explicit in the request text because OpenRouter's image tool
     // and other providers route generation based on the prompt as well as the selected model.
     let outgoingText = imageMode && (activeConversation?.targetMode || targetMode) === 'model' && rawText
-      ? (/^(?:genera|generar|crea|crear|dibuja|dibujar|hazme|haz|produce|make|generate|create|draw|design)\b/i.test(rawText) ? rawText : `Genera una imagen: ${rawText}`)
+      // Only skip the prefix when the user explicitly mentions an image/photo/artwork.
+      // "Crea un gato" starts with a verb but still needs to be routed to image generation.
+      ? (/(?:imagen|imágenes|imagenes|foto|fotografía|ilustración|ilustracion|dibujo|logo|portada|image|picture|photo|illustration|drawing|artwork|icon|thumbnail)/i.test(rawText) ? rawText : `Genera una imagen: ${rawText}`)
       : rawText;
     let mode: 'agent' | 'model' = activeConversation?.targetMode || targetMode;
     let targetId = activeConversation?.targetId || activeConversation?.agentId || (mode === 'agent' ? selectedAgentId : selectedModelId);
