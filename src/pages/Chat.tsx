@@ -210,7 +210,18 @@ export const ChatPage = () => {
     setCatalogLoading(true); setError(''); setCatalogModels([]);
     try {
       // Consultar el catálogo con los datos del proveedor elegido evita depender de una sincronización de configuración previa.
-      const list = await fetchProviderCatalog(workerUrl, provider) as CatalogModel[];
+      const fetchedModels = await fetchProviderCatalog(workerUrl, provider) as CatalogModel[];
+      // NVIDIA's /v1/models catalog can omit Visual GenAI models even when the Worker
+      // supports routing them. Keep known visual candidates selectable in the UI;
+      // actual availability is confirmed by the inference endpoint when the user sends.
+      const isNvidiaProvider = String(provider.type || '').toLowerCase().includes('nvidia');
+      const nvidiaVisualCandidates: CatalogModel[] = [
+        { id: 'black-forest-labs/flux.2-klein-4b', name: 'FLUX.2 Klein 4B (NVIDIA Visual GenAI)', inputModalities: ['text'], outputModalities: ['image'], inputModalitiesKnown: true, outputModalitiesKnown: true, capabilitiesSource: 'inferred' },
+        { id: 'stability-ai/stable-diffusion-3.5-large', name: 'Stable Diffusion 3.5 Large (NVIDIA Visual GenAI)', inputModalities: ['text'], outputModalities: ['image'], inputModalitiesKnown: true, outputModalitiesKnown: true, capabilitiesSource: 'inferred' },
+      ];
+      const list = isNvidiaProvider
+        ? [...fetchedModels, ...nvidiaVisualCandidates.filter(candidate => !fetchedModels.some(item => item.id.toLowerCase() === candidate.id.toLowerCase()))]
+        : fetchedModels;
       setCatalogModels(list);
       const imageModelId = list.find(item => (item.outputModalities || []).includes('image') || /flux|imagen|stable[ ._-]?diffusion|sdxl|image[ ._-]?generation|dall[ ._-]?e|nano[ ._-]?banana|kandinsky|playground/i.test(`${item.name} ${item.id}`))?.id || '';
       // OpenRouter exposes text models in /models; its server-side image tool can generate
