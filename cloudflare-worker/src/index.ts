@@ -853,14 +853,28 @@ export default {
               || /(?:imagen|image)\s+(?:de|of)\s+/i.test(message)
               || /^(?:dibuja|dibujar|draw)\s+/i.test(message);
             const openRouterImageTool = provider.includes('openrouter') && requestsImageGeneration
-              ? { modalities: ['text', 'image'], tools: [{ type: 'openrouter:image_generation' }], tool_choice: 'auto' }
+              ? {
+                  modalities: ['text', 'image'],
+                  // Explicitly require the server tool in image mode. With "auto", free/text
+                  // models may simply explain how to make an image instead of generating one.
+                  tools: [{ type: 'openrouter:image_generation', parameters: { size: '1024x1024', output_format: 'png' } }],
+                  tool_choice: 'required',
+                }
               : {};
+            const imageModeInstruction = provider.includes('openrouter') && requestsImageGeneration
+              ? 'Estás en modo de generación de imágenes. Debes llamar a la herramienta openrouter:image_generation para crear la imagen solicitada. No respondas que no puedes generar archivos, no ofrezcas prompts alternativos ni arte ASCII. Después de generar, presenta la imagen resultante de forma breve.'
+              : '';
             upstream = await fetch(requestEndpoint, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}`, ...(provider.includes('openrouter') ? { 'HTTP-Referer': 'https://anapse.github.io/BOT-IA-PC/', 'X-OpenRouter-Title': 'BOT IA PC' } : {}) },
               body: JSON.stringify({
                 model: modelId,
-                messages: [...(systemInstruction ? [{ role: 'system', content: systemInstruction }] : []), ...safeHistory, { role: 'user', content: currentUserContent }],
+                messages: [
+                  ...(systemInstruction ? [{ role: 'system', content: systemInstruction }] : []),
+                  ...(imageModeInstruction ? [{ role: 'system', content: imageModeInstruction }] : []),
+                  ...safeHistory,
+                  { role: 'user', content: currentUserContent },
+                ],
                 temperature: 0.7,
                 max_tokens: 2048,
                 stream: false,
