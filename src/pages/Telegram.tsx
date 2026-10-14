@@ -333,7 +333,8 @@ export const TelegramPage = () => {
                 placeholder={editingConnection ? "Deja vacío para conservar el token actual" : "123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ"}
                 isSecret
                 name="telegram-bot-token"
-                autoComplete="new-password"
+                autoComplete="off"
+                secretInputType="text"
               />
 
               <div className="space-y-2">
