@@ -658,7 +658,7 @@ export default {
         const mode = input?.mode === 'model' ? 'model' : 'agent';
         const agentId = typeof input?.agentId === 'string' ? input.agentId : (mode === 'agent' && typeof input?.targetId === 'string' ? input.targetId : '');
         const requestedModelId = typeof input?.modelId === 'string' ? input.modelId : (mode === 'model' && typeof input?.targetId === 'string' ? input.targetId : '');
-        const message = typeof input?.message === 'string' ? input.message.trim() : '';
+        let message = typeof input?.message === 'string' ? input.message.trim() : '';
         const rawAttachments = Array.isArray(input?.attachments) ? input.attachments.slice(0, 4) : [];
         const attachments: ChatAttachment[] = [];
         let totalAttachmentChars = 0;
@@ -694,6 +694,8 @@ export default {
         let isAnthropic = false;
         let isGemini = false;
         let isOpenAICompatible = false;
+        let customEndpoint = '';
+        let configuredProviderOptions: any = null;
 
         if (temporary) {
           provider = String(temporary.provider || '').trim().toLowerCase();
@@ -713,6 +715,8 @@ export default {
             modelId = String(mode === 'agent' ? (agent?.modelId || agent?.model || '') : requestedModelId).trim();
             apiKey = typeof configuredProvider.apiKey === 'string' ? configuredProvider.apiKey.trim() : '';
             endpoint = typeof configuredProvider.endpoint === 'string' ? configuredProvider.endpoint.trim() : '';
+            customEndpoint = typeof configuredProvider.customEndpoint === 'string' ? configuredProvider.customEndpoint.trim() : '';
+            configuredProviderOptions = configuredProvider;
             model = configuredProvider;
             if (!apiKey) return json({ error: 'El proveedor seleccionado no tiene API key guardada.' }, 400);
           } else {
@@ -726,6 +730,28 @@ export default {
             apiKey = typeof model.apiKey === 'string' ? model.apiKey.trim() : '';
             endpoint = typeof model.endpoint === 'string' ? model.endpoint.trim() : '';
             if (!apiKey) return json({ error: 'El modelo no tiene API Key guardada. Edítalo y guarda la clave antes de sincronizar.' }, 400);
+          }
+        }
+
+        if (configuredProviderOptions) {
+          const defaultModel = typeof configuredProviderOptions.defaultModel === 'string' ? configuredProviderOptions.defaultModel.trim() : '';
+          if (defaultModel) modelId = defaultModel;
+          const promptLimit = Number(configuredProviderOptions.promptLimit);
+          const promptLimitType = configuredProviderOptions.promptLimitType === 'tokens' ? 'tokens' : 'characters';
+          if (Number.isFinite(promptLimit) && promptLimit > 0 && message) {
+            // Generic token estimates avoid adding a tokenizer dependency to each provider.
+            const maxChars = Math.max(1, Math.floor(promptLimitType === 'tokens' ? promptLimit * 4 : promptLimit));
+            if (message.length > maxChars) message = message.slice(0, maxChars).replace(/[\uD800-\uDBFF]$/, '');
+          }
+          if (customEndpoint) {
+            try {
+              const customUrl = new URL(customEndpoint);
+              if (customUrl.protocol !== 'https:' || customUrl.username || customUrl.password || /^(localhost|127\.|10\.|192\.168\.|169\.254\.)/i.test(customUrl.hostname) || /^172\.(1[6-9]|2[0-9]|3[01])\./i.test(customUrl.hostname)) {
+                return json({ error: 'El endpoint de inferencia personalizado debe ser HTTPS y no puede apuntar a una dirección local o privada.' }, 400);
+              }
+            } catch {
+              return json({ error: 'La URL del endpoint de inferencia personalizado no es válida.' }, 400);
+            }
           }
         }
 
@@ -776,7 +802,7 @@ export default {
               if (item.mimeType.startsWith('image/')) anthropicContent.push({ type: 'image', source: { type: 'base64', media_type: item.mimeType, data: item.data } });
               else if (item.mimeType === 'application/pdf') anthropicContent.push({ type: 'document', source: { type: 'base64', media_type: item.mimeType, data: item.data } });
             }
-            upstream = await fetch((endpoint ? endpoint.replace(/\/+$/, '') : 'https://api.anthropic.com/v1') + '/messages', {
+            upstream = await fetch(customEndpoint || ((endpoint ? endpoint.replace(/\/+$/, '') : 'https://api.anthropic.com/v1') + '/messages'), {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'false' },
               body: JSON.stringify({ model: modelId, max_tokens: 2048, temperature: 0.7, ...(systemInstruction ? { system: systemInstruction } : {}), messages: [...safeHistory, { role: 'user', content: anthropicContent.length ? anthropicContent : message }].map((item: any) => ({ role: item.role === 'assistant' ? 'assistant' : 'user', content: item.content })) }),
@@ -784,7 +810,7 @@ export default {
             });
           } else if (isGemini && /^imagen-/i.test(modelId)) {
             const base = (endpoint ? endpoint.replace(/\/+$/, '') : 'https://generativelanguage.googleapis.com/v1beta');
-            upstream = await fetch(base + `/models/${encodeURIComponent(modelId)}:predict?key=${encodeURIComponent(apiKey)}`, {
+            upstream = await fetch(customEndpoint || (base + `/models/${encodeURIComponent(modelId)}:predict?key=${encodeURIComponent(apiKey)}`), {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ instances: [{ prompt: message }], parameters: { sampleCount: 1 } }),
               signal: AbortSignal.timeout(45000),
@@ -793,7 +819,7 @@ export default {
             const currentParts: any[] = [];
             if (message) currentParts.push({ text: message });
             for (const item of attachments) currentParts.push({ inlineData: { mimeType: item.mimeType, data: item.data } });
-            upstream = await fetch((endpoint ? endpoint.replace(/\/+$/, '') : 'https://generativelanguage.googleapis.com/v1beta') + `/models/${encodeURIComponent(modelId)}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+            upstream = await fetch(customEndpoint || ((endpoint ? endpoint.replace(/\/+$/, '') : 'https://generativelanguage.googleapis.com/v1beta') + `/models/${encodeURIComponent(modelId)}:generateContent?key=${encodeURIComponent(apiKey)}`), {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 ...(systemInstruction ? { systemInstruction: { parts: [{ text: systemInstruction }] } } : {}),
@@ -827,9 +853,9 @@ export default {
             };
             modelSlug = canonicalImageModels[modelSlug.toLowerCase()] || modelSlug;
             const configuredBase = endpoint.replace(/\/+$/, '');
-            const requestUrl = /\/v1\/genai\//i.test(configuredBase)
+            const requestUrl = customEndpoint || (/\/v1\/genai\//i.test(configuredBase)
               ? configuredBase
-              : `https://ai.api.nvidia.com/v1/genai/${modelSlug.split('/').map((part: string) => encodeURIComponent(part)).join('/')}`;
+              : `https://ai.api.nvidia.com/v1/genai/${modelSlug.split('/').map((part: string) => encodeURIComponent(part)).join('/')}`);
             const parsedUrl = new URL(requestUrl);
             if (parsedUrl.protocol !== 'https:') throw new Error('Invalid provider URL protocol');
             visualRequestUrl = requestUrl;
@@ -858,7 +884,7 @@ export default {
               : provider.includes('mistral') ? 'https://api.mistral.ai/v1/chat/completions'
               : provider.includes('xai') ? 'https://api.x.ai/v1/chat/completions'
               : 'https://api.openai.com/v1/chat/completions';
-            const requestEndpoint = temporary ? defaultEndpoint : (endpoint ? (endpoint.replace(/\/+$/, '').endsWith('/chat/completions') ? endpoint.replace(/\/+$/, '') : endpoint.replace(/\/+$/, '') + '/chat/completions') : defaultEndpoint);
+            const requestEndpoint = customEndpoint || (temporary ? defaultEndpoint : (endpoint ? (endpoint.replace(/\/+$/, '').endsWith('/chat/completions') ? endpoint.replace(/\/+$/, '') : endpoint.replace(/\/+$/, '') + '/chat/completions') : defaultEndpoint));
             providerRequestUrl = requestEndpoint;
             const currentContent: any[] = [];
             if (message) currentContent.push({ type: 'text', text: message });
