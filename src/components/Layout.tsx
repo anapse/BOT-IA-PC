@@ -18,7 +18,7 @@ export const Layout = ({ activeTab, onTabChange, children }: { activeTab: string
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
               Sistema operativo
             </span>
-            <div aria-label="Sistema activo" title="Sistema activo" className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-700 bg-slate-800/80 text-xs font-bold text-cyan-300">
+            <div aria-label="Sistema activo" title="Sistema activo" className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-700 bg-slate-800/80 text-xs font-bold text-violet-300">
               IA
             </div>
           </div>
