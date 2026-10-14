@@ -216,8 +216,9 @@ export const ChatPage = () => {
       // actual availability is confirmed by the inference endpoint when the user sends.
       const isNvidiaProvider = String(provider.type || '').toLowerCase().includes('nvidia');
       const nvidiaVisualCandidates: CatalogModel[] = [
+        // FLUX.2 Klein has a verified working endpoint. Do not inject other visual
+        // models into the picker unless NVIDIA actually returns them in its catalog.
         { id: 'black-forest-labs/flux.2-klein-4b', name: 'FLUX.2 Klein 4B (NVIDIA Visual GenAI)', inputModalities: ['text'], outputModalities: ['image'], inputModalitiesKnown: true, outputModalitiesKnown: true, capabilitiesSource: 'inferred' },
-        { id: 'stability-ai/stable-diffusion-3.5-large', name: 'Stable Diffusion 3.5 Large (NVIDIA Visual GenAI)', inputModalities: ['text'], outputModalities: ['image'], inputModalitiesKnown: true, outputModalitiesKnown: true, capabilitiesSource: 'inferred' },
       ];
       const list = isNvidiaProvider
         ? [...fetchedModels, ...nvidiaVisualCandidates.filter(candidate => !fetchedModels.some(item => item.id.toLowerCase() === candidate.id.toLowerCase()))]
