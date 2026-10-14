@@ -518,6 +518,7 @@ export default {
       }
       const isGemini = provider.includes('gemini') || provider === 'google' || provider.includes('google');
       const isAnthropic = provider.includes('anthropic') || provider === 'claude';
+      const isFluxImage = provider.includes('nvidia') && (/flux/i.test(modelId || configuredModelId) || /flux/i.test(customEndpoint));
       const isOpenAICompatible = provider === 'openai' || provider === 'openai-compatible' || provider.includes('openrouter') || provider.includes('nvidia') || provider.includes('deepseek') || provider.includes('groq') || provider.includes('together') || provider.includes('mistral') || provider.includes('xai');
       if (!model || model.status === 'inactivo' || model.status === 'pausado' || !apiKey || (!isGemini && !isAnthropic && !isOpenAICompatible)) {
         await send('El proveedor o modelo asignado no está listo. Comprueba que el proveedor esté activo, tenga API key y que el agente tenga un modelo compatible asignado.');
@@ -541,7 +542,18 @@ export default {
       let aiResponse: Response;
       let requestHost = '';
       try {
-        if (isAnthropic) {
+        if (isFluxImage) {
+          const requestUrl = customEndpoint || 'https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.2-klein-4b';
+          const parsedUrl = new URL(requestUrl);
+          if (parsedUrl.protocol !== 'https:') throw new Error('Invalid provider URL protocol');
+          requestHost = parsedUrl.hostname;
+          aiResponse = await fetch(requestUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + apiKey },
+            body: JSON.stringify({ prompt: message, width: 1024, height: 1024, num_inference_steps: 4 }),
+            signal: AbortSignal.timeout(60000),
+          });
+        } else if (isAnthropic) {
           const base = (endpoint || 'https://api.anthropic.com/v1').replace(/\/+$/, '');
           const requestUrl = customEndpoint || (base.endsWith('/messages') ? base : base + '/messages');
           const parsedUrl = new URL(requestUrl);
@@ -602,6 +614,45 @@ export default {
         return json({ error: 'AI provider unavailable', provider, errorName }, 502);
       }
       const result: any = await aiResponse.json().catch(() => ({}));
+      if (isFluxImage) {
+        const artifact = Array.isArray(result?.artifacts) ? result.artifacts.find((item: any) =>
+          typeof (item?.base64 || item?.image_base64 || item?.bytesBase64Encoded) === 'string'
+        ) : null;
+        const imageBase64 = artifact?.base64 || artifact?.image_base64 || artifact?.bytesBase64Encoded;
+        if (!aiResponse.ok || typeof imageBase64 !== 'string') {
+          const detail = String(result?.detail || result?.message || result?.error?.message || result?.title || '');
+          console.error('Telegram NVIDIA image generation failed', { status: aiResponse.status, modelId, requestHost, detail: detail.slice(0, 300) });
+          const hint = aiResponse.status === 401 || aiResponse.status === 403
+            ? ' NVIDIA no autorizó la clave o el acceso a este modelo.'
+            : aiResponse.status === 429 ? ' NVIDIA alcanzó el límite de solicitudes; inténtalo más tarde.' : '';
+          await send('No se pudo generar la imagen con NVIDIA (HTTP ' + aiResponse.status + ').' + hint + (detail ? '\nDetalle: ' + detail.slice(0, 500) : ''));
+          return json({ error: 'Image generation failed', status: aiResponse.status }, 502);
+        }
+        try {
+          const binary = atob(imageBase64);
+          const bytes = new Uint8Array(binary.length);
+          for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+          const mimeType = String(artifact?.mime_type || artifact?.mimeType || (imageBase64.startsWith('/9j/') ? 'image/jpeg' : 'image/png'));
+          const extension = mimeType === 'image/jpeg' ? 'jpg' : 'png';
+          const form = new FormData();
+          form.append('chat_id', String(chatId));
+          form.append('caption', 'Imagen generada con NVIDIA FLUX.2 Klein 4B');
+          form.append('photo', new Blob([bytes], { type: mimeType }), 'imagen-flux.' + extension);
+          const sent = await fetch('https://api.telegram.org/bot' + connection.botToken + '/sendPhoto', { method: 'POST', body: form });
+          if (!sent.ok) {
+            const telegramError: any = await sent.json().catch(() => ({}));
+            console.error('Telegram sendPhoto failed', { status: sent.status, description: String(telegramError?.description || '').slice(0, 250) });
+            await send('La imagen se generó, pero Telegram no pudo enviarla. ' + String(telegramError?.description || ('HTTP ' + sent.status)).slice(0, 250));
+            return json({ error: 'Telegram sendPhoto failed', status: sent.status }, 502);
+          }
+          return json({ status: 'ok', type: 'image' });
+        } catch (error) {
+          const errorName = error instanceof Error ? error.name : 'UnknownError';
+          console.error('Telegram image processing failed', { errorName, modelId });
+          await send('NVIDIA devolvió una imagen, pero no se pudo preparar para Telegram (' + errorName + ').');
+          return json({ error: 'Image processing failed' }, 502);
+        }
+      }
       const rawReply = isAnthropic
         ? (Array.isArray(result?.content) ? result.content.map((part: any) => typeof part?.text === 'string' ? part.text : '').join('').trim() : '')
         : isGemini
@@ -609,8 +660,13 @@ export default {
           : (typeof result?.choices?.[0]?.message?.content === 'string' ? result.choices[0].message.content.trim() : '');
       const reply = formatTelegramText(rawReply);
       if (!aiResponse.ok || !reply) {
-        await send(aiResponse.status === 429 ? 'La IA está ocupada. Inténtalo en un momento.' : 'La IA no pudo responder. Revisa el modelo configurado.');
-        return json({ error: 'AI request failed' }, 502);
+        const detail = String(result?.error?.message || result?.message || result?.detail || '');
+        console.error('Telegram AI response was empty or rejected', { status: aiResponse.status, provider, modelId, requestHost, detail: detail.slice(0, 300) });
+        const userMessage = aiResponse.status === 429
+          ? 'La IA está ocupada. Inténtalo en un momento.'
+          : 'El proveedor ' + provider.toUpperCase() + ' no pudo responder (HTTP ' + aiResponse.status + ').' + (detail ? '\nDetalle: ' + detail.slice(0, 500) : ' Revisa el ID del modelo, endpoint y acceso de la API key.');
+        await send(userMessage);
+        return json({ error: 'AI request failed', status: aiResponse.status }, 502);
       }
       // Telegram's message limit is 4096 characters. Keep a safety margin.
       const chunks = reply.match(/[\s\S]{1,3900}/g) || [''];
