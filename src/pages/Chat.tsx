@@ -164,7 +164,6 @@ export const ChatPage = () => {
   const [temporaryModelId, setTemporaryModelId] = useState('');
   const [temporaryApiKey, setTemporaryApiKey] = useState('');
   const [targetSearch, setTargetSearch] = useState('');
-  const [imageMode, setImageMode] = useState(false);
   const [message, setMessage] = useState('');
   const [pendingAttachments, setPendingAttachments] = useState<ChatFileAttachment[]>([]);
   const [workerUrl, setWorkerUrl] = useState('https://bot-ia-pc.elherreroanapse.workers.dev');
@@ -224,19 +223,9 @@ export const ChatPage = () => {
         ? [...fetchedModels, ...nvidiaVisualCandidates.filter(candidate => !fetchedModels.some(item => item.id.toLowerCase() === candidate.id.toLowerCase()))]
         : fetchedModels;
       setCatalogModels(list);
-      const imageModelId = list.find(item => (item.outputModalities || []).includes('image') || /flux|imagen|stable[ ._-]?diffusion|sdxl|image[ ._-]?generation|dall[ ._-]?e|nano[ ._-]?banana|kandinsky|playground/i.test(`${item.name} ${item.id}`))?.id || '';
-      // OpenRouter exposes text models in /models; its server-side image tool can generate
-      // images with a compatible text model, so preserve/select one instead of clearing it.
-      const openRouterImageTool = imageMode && String(provider.type || '').toLowerCase().includes('openrouter');
-      const nextModelId = imageMode
-        ? (imageModelId || (openRouterImageTool ? (list.find(item => item.id === selectedModelId)?.id || list[0]?.id || '') : ''))
-        : (list.some(item => item.id === selectedModelId) ? selectedModelId : (list[0]?.id || ''));
+      const nextModelId = list.some(item => item.id === selectedModelId) ? selectedModelId : (list[0]?.id || '');
       setSelectedModelId(nextModelId);
-      if (imageMode && targetMode === 'model' && activeConversation && nextModelId) {
-        updateConversationTarget(activeConversation.id, 'model', nextModelId, id);
-      }
       if (!list.length) setError('El proveedor respondió, pero no ofreció modelos disponibles.');
-      else if (imageMode && !nextModelId) setError('Este proveedor no ofrece un modelo de imagen disponible. Selecciona OpenRouter con una clave válida o un modelo visual compatible.');
     } catch (e: any) {
       setCatalogModels([]);
       if (targetMode === 'model') setError(e?.message || 'No se pudo leer la configuración guardada del proveedor.');
@@ -258,7 +247,7 @@ export const ChatPage = () => {
       setCatalogLoading(false);
       setError(providers.length ? 'Selecciona un proveedor activo.' : 'No hay proveedores activos guardados.');
     }
-  }, [targetMode, selectedProviderId, providers, imageMode]);
+  }, [targetMode, selectedProviderId, providers]);
 
   useEffect(() => {
     // Keep conversation history lightweight: file bytes stay in memory, not localStorage.
@@ -289,14 +278,7 @@ export const ChatPage = () => {
   const temporaryReady = Boolean(effectiveTemporaryProvider && effectiveTemporaryModelId.trim() && temporaryApiKey.trim());
   const temporaryLabel = activeTemporaryModel?.name || (effectiveTemporaryModelId.trim() ? `${effectiveTemporaryModelId.trim()} · temporal` : 'Modelo temporal');
   const filteredAgents = agents.filter(agent => normalizeCommand(agent.name).includes(normalizeCommand(targetSearch)));
-  const filteredModels = catalogModels.filter(model => {
-    const selectedProviderType = String(providers.find(provider => provider.id === effectiveProviderId)?.type || '').toLowerCase();
-    // OpenRouter's server-side image_generation tool can be invoked by any supported text model;
-    // do not hide those models just because their own output modality is text.
-    const openRouterImageTool = imageMode && selectedProviderType.includes('openrouter');
-    const imageCapable = (model.outputModalities || []).includes('image') || /flux|imagen|stable[ ._-]?diffusion|sdxl|image[ ._-]?generation|dall[ ._-]?e|nano[ ._-]?banana|kandinsky|playground/i.test(`${model.name} ${model.id}`);
-    return (!imageMode || openRouterImageTool || imageCapable) && normalizeCommand(`${model.name} ${model.id}`).includes(normalizeCommand(targetSearch));
-  });
+  const filteredModels = catalogModels.filter(model => normalizeCommand(`${model.name} ${model.id}`).includes(normalizeCommand(targetSearch)));
   const currentMessages = activeConversation?.messages || [];
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, [currentMessages.length, sending]);
 
@@ -310,7 +292,7 @@ export const ChatPage = () => {
   }, [conversations]);
 
   const startNewChat = (agentId = selectedAgentId) => {
-    setActiveConversationId(''); setTargetMode('agent'); setImageMode(false); setSelectedAgentId(agentId); setSelectedModelId(models[0]?.id || '__temporary__'); setMessage(''); setPendingAttachments([]); setError('');
+    setActiveConversationId(''); setTargetMode('agent'); setSelectedAgentId(agentId); setSelectedModelId(models[0]?.id || '__temporary__'); setMessage(''); setPendingAttachments([]); setError('');
     setTimeout(() => textareaRef.current?.focus(), 0);
   };
   const updateConversationTarget = (conversationId: string, mode: 'agent' | 'model', targetId: string, providerId?: string) => {
@@ -386,13 +368,8 @@ export const ChatPage = () => {
     if ((!rawText && !outgoingAttachments.length) || sending) return;
     setError('');
 
-    // Image mode must be explicit in the request text because OpenRouter's image tool
-    // and other providers route generation based on the prompt as well as the selected model.
-    let outgoingText = imageMode && (activeConversation?.targetMode || targetMode) === 'model' && rawText
-      // Only skip the prefix when the user explicitly mentions an image/photo/artwork.
-      // "Crea un gato" starts with a verb but still needs to be routed to image generation.
-      ? (/(?:imagen|imágenes|imagenes|foto|fotografía|ilustración|ilustracion|dibujo|logo|portada|image|picture|photo|illustration|drawing|artwork|icon|thumbnail)/i.test(rawText) ? rawText : `Genera una imagen: ${rawText}`)
-      : rawText;
+    // El Worker detecta las solicitudes de generación a partir del texto y del modelo seleccionado.
+    const outgoingText = rawText;
     let mode: 'agent' | 'model' = activeConversation?.targetMode || targetMode;
     let targetId = activeConversation?.targetId || activeConversation?.agentId || (mode === 'agent' ? selectedAgentId : selectedModelId);
     const providerIdForRequest = activeConversation?.targetProviderId || selectedProviderId;
@@ -511,7 +488,7 @@ ${agents.map(agent => `• $${aliasFor(agent)} — ${agent.name}`).join('\\n')}`
     setConversations(current => current.filter(item => item.id !== id));
     if (activeConversationId === id) setActiveConversationId('');
   };
-  const selectConversation = (item: Conversation) => { setActiveConversationId(item.id); setTargetMode(item.targetMode || 'agent'); setImageMode(false); setSelectedAgentId(item.agentId); if (item.targetMode === 'model' && item.targetId) { setSelectedModelId(item.targetId); setSelectedProviderId(item.targetProviderId || '');  } setError(''); };
+  const selectConversation = (item: Conversation) => { setActiveConversationId(item.id); setTargetMode(item.targetMode || 'agent'); setSelectedAgentId(item.agentId); if (item.targetMode === 'model' && item.targetId) { setSelectedModelId(item.targetId); setSelectedProviderId(item.targetProviderId || '');  } setError(''); };
 
   return <div className="flex -m-4 sm:-m-8 h-[calc(100dvh-64px)] min-h-[520px] overflow-hidden bg-slate-950 text-slate-100">
     {sidebarOpen && <aside className="w-64 shrink-0 border-r border-slate-800 bg-slate-950 flex flex-col max-md:w-[76px]">
@@ -532,21 +509,9 @@ ${agents.map(agent => `• $${aliasFor(agent)} — ${agent.name}`).join('\\n')}`
       <header className="flex min-h-[62px] items-center justify-between gap-3 border-b border-slate-800 px-3 sm:px-5">
         <div className="flex min-w-0 items-center gap-2"><button onClick={() => setSidebarOpen(value => !value)} title={sidebarOpen ? 'Ocultar conversaciones' : 'Mostrar conversaciones'} className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white">{sidebarOpen ? <PanelLeftClose size={18}/> : <PanelLeftOpen size={18}/>}</button><div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-cyan-950 text-cyan-300"><Bot size={17}/></div><div className="min-w-0"><p className="truncate text-sm font-semibold">{activeConversation ? activeConversation.title : 'Nuevo chat'}</p><p className="text-[11px] text-slate-500">Conversaciones separadas por agente o modelo</p></div></div>
         <div className="flex max-w-[78%] items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-900 p-1.5 sm:gap-2 sm:px-3 sm:py-2">
-          <button type="button" title={imageMode ? "Desactivar selector de imágenes" : "Buscar modelos para generar imágenes"} aria-pressed={imageMode} onClick={() => {
-            if (imageMode) {
-              setImageMode(false);
-              setError('');
-              return;
-            }
-            const selectedProviderType = String(providers.find(provider => provider.id === selectedProviderId)?.type || '').toLowerCase();
-            const imageModel = catalogModels.find(model => (model.outputModalities || []).includes('image') || /flux|imagen|stable[ ._-]?diffusion|sdxl|image[ ._-]?generation|dall[ ._-]?e|nano[ ._-]?banana|kandinsky|playground/i.test(`${model.name} ${model.id}`));
-            const nextModelId = imageModel?.id || (selectedProviderType.includes('openrouter') ? catalogModels[0]?.id || '' : '');
-            setImageMode(true); setTargetMode('model'); setTargetSearch(''); setSelectedModelId(nextModelId); setError('');
-            if (activeConversation) updateConversationTarget(activeConversation.id, 'model', nextModelId, selectedProviderId);
-          }} className={`inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1.5 text-xs transition-colors ${imageMode ? 'bg-violet-600 text-white' : 'text-violet-300 hover:bg-slate-800'}`}><ImageIcon size={15}/><span className="hidden sm:inline">Imágenes</span></button>
           <select aria-label="Tipo de destino" value={activeConversation ? (activeConversation.targetMode || 'agent') : targetMode} onChange={event => {
             const next = event.target.value as 'agent' | 'model';
-            setTargetMode(next); if (next !== 'model') setImageMode(false); setError('');
+            setTargetMode(next); setError('');
             if (activeConversation) {
               const nextId = next === 'agent' ? selectedAgentId : selectedModelId;
               updateConversationTarget(activeConversation.id, next, nextId, selectedProviderId);
