@@ -71,9 +71,11 @@ export const WorkerPage = () => {
       const agents = await getCollectionDataStrict('agents');
       const models = await getCollectionDataStrict('modelConfigs');
       const connections = await getCollectionDataStrict('telegramConnections');
+      const providers = await getCollectionDataStrict('providers');
       const payload = {
         agents: agents || [],
         models: models || [],
+        providers: providers || [],
         connections: connections || [],
         syncedAt: new Date().toISOString(),
       };
@@ -82,7 +84,7 @@ export const WorkerPage = () => {
       const registered = webhookResults.filter((item: any) => item.status === 'registered').length;
       const failed = webhookResults.filter((item: any) => item.status === 'error').length;
       const inactive = webhookResults.filter((item: any) => item.status === 'inactive').length;
-      let message = `Sincronización correcta. Enviados a KV: ${payload.agents.length} agentes, ${payload.models.length} modelos y ${payload.connections.length} conexiones.`;
+      let message = `Sincronización correcta. Enviados a KV: ${payload.agents.length} agentes, ${payload.models.length} modelos, ${payload.providers.length} proveedores y ${payload.connections.length} conexiones.`;
       if (webhookResults.length) {
         message += ` Webhooks Telegram: ${registered} registrados${failed ? `, ${failed} con error` : ''}${inactive ? `, ${inactive} inactivos (sin webhook)` : ''}.`;
         const webhookDetails = webhookResults.map((item: any) => {
