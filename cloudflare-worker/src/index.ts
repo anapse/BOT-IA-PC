@@ -489,11 +489,27 @@ export default {
       }
       const models = Array.isArray(config.models) ? config.models : [];
       const providers = Array.isArray(config.providers) ? config.providers : [];
-      const configuredProviderId = String(agent.providerId || '');
-      const configuredProvider = configuredProviderId
-        ? providers.find((item: any) => item?.id === configuredProviderId && item?.status === 'activo')
+      const configuredProviderId = String(agent.providerId || '').trim();
+      const isActiveStatus = (value: unknown) => {
+        const normalized = String(value ?? 'activo').trim().toLowerCase();
+        return normalized === 'activo' || normalized === 'active' || normalized === 'enabled';
+      };
+      // Resolve the provider by ID first, without hiding records whose status uses
+      // an older spelling/case. The status guard below still rejects disabled records.
+      let configuredProvider = configuredProviderId
+        ? providers.find((item: any) => String(item?.id || '').trim() === configuredProviderId) || null
         : null;
-      const legacyModel = models.find((item: any) => item?.status === 'activo' && (item?.modelId === agent.model || item?.id === agent.model || item?.name === agent.model));
+      const requestedModelId = String(agent.modelId || agent.model || '').trim();
+      // Recover legacy agents whose providerId became stale after provider edits:
+      // only infer NVIDIA when the agent clearly requests FLUX and exactly one
+      // active NVIDIA provider can satisfy it.
+      if (!configuredProvider && /flux/i.test(requestedModelId)) {
+        const nvidiaProviders = providers.filter((item: any) =>
+          String(item?.type || '').trim().toLowerCase() === 'nvidia' && isActiveStatus(item?.status)
+        );
+        if (nvidiaProviders.length === 1) configuredProvider = nvidiaProviders[0];
+      }
+      const legacyModel = models.find((item: any) => isActiveStatus(item?.status) && (item?.modelId === agent.model || item?.id === agent.model || item?.name === agent.model));
       const model: any = configuredProvider || legacyModel;
       const provider = String(configuredProvider?.type || legacyModel?.provider || '').toLowerCase();
       const apiKey = String(configuredProvider?.apiKey || legacyModel?.apiKey || '').trim();
