@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card } from '../components/Card';
 import { InputField } from '../components/InputField';
 import { ActionButton } from '../components/ActionButton';
@@ -34,6 +34,7 @@ export const TelegramPage = () => {
   const [agentIds, setAgentIds] = useState<string[]>([]);
   const [allowedUsersText, setAllowedUsersText] = useState('');
   const [saving, setSaving] = useState(false);
+  const saveRequestedRef = useRef(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [syncError, setSyncError] = useState('');
 
@@ -120,6 +121,9 @@ export const TelegramPage = () => {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Password managers can trigger form submission while autofilling. Only accept an explicit Save click.
+    if (!saveRequestedRef.current) return;
+    saveRequestedRef.current = false;
     if (!name.trim() || (!editingConnection && !botToken.trim()) || agentIds.length === 0) {
       setErrorMsg(agentIds.length === 0 ? 'Selecciona al menos un agente para este bot.' : editingConnection ? 'El nombre del bot es obligatorio.' : 'Nombre y Token del bot son obligatorios.');
       return;
@@ -383,7 +387,7 @@ export const TelegramPage = () => {
                 <ActionButton
                   label={saving ? 'Guardando...' : editingConnection ? 'Guardar Cambios' : 'Guardar Conexión'}
                   type="submit"
-                  onClick={() => {}}
+                  onClick={() => { saveRequestedRef.current = true; }}
                 />
               </div>
             </form>
