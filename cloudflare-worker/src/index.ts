@@ -761,6 +761,8 @@ export default {
           || /(?:imagen|image)\s+(?:de|of)\s+/i.test(message)
           || /^(?:dibuja|dibujar|draw)\s+/i.test(message);
         let upstream: Response;
+        let visualRequestUrl = '';
+        let isNvidiaVisualRequest = false;
         try {
           if (isAnthropic) {
             const anthropicContent: any[] = [];
@@ -825,6 +827,8 @@ export default {
               : `https://ai.api.nvidia.com/v1/genai/${modelSlug.split('/').map((part: string) => encodeURIComponent(part)).join('/')}`;
             const parsedUrl = new URL(requestUrl);
             if (parsedUrl.protocol !== 'https:') throw new Error('Invalid provider URL protocol');
+            visualRequestUrl = requestUrl;
+            isNvidiaVisualRequest = true;
             // NVIDIA's FLUX.2 Klein endpoint accepts only four steps and uses
             // the exact "Image Generation" mode; FLUX.1 models use different limits.
             const isFlux2Klein = /(?:^|\/)flux\.2-klein-4b$/i.test(modelSlug);
@@ -834,7 +838,7 @@ export default {
               : { prompt: message, mode: 'base', width: 1024, height: 1024, steps: isFlux1Schnell ? 4 : 25, cfg_scale: isFlux1Schnell ? 0 : 3.5, samples: 1, seed: 0 };
             upstream = await fetch(requestUrl, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+              headers: { Accept: 'application/json', 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
               body: JSON.stringify(imagePayload),
               signal: AbortSignal.timeout(90000),
             });
@@ -889,13 +893,17 @@ export default {
             });
           }
         } catch { return json({ error: 'No se pudo conectar con el proveedor de IA.' }, 502); }
-        const result: any = await upstream.json().catch(() => ({}));
+        const responseText = !upstream.ok ? await upstream.clone().text().catch(() => '') : '';
+        let result: any = {};
+        try { result = await upstream.json(); } catch { result = {}; }
         if (!upstream.ok) {
-          const apiMessage = typeof result?.error?.message === 'string' ? result.error.message : (typeof result?.error?.type === 'string' ? result.error.type : (typeof result?.detail === 'string' ? result.detail : (typeof result?.message === 'string' ? result.message : 'El proveedor rechazó la solicitud.')));
+          const apiMessage = typeof result?.error?.message === 'string' ? result.error.message : (typeof result?.error?.type === 'string' ? result.error.type : (typeof result?.detail === 'string' ? result.detail : (typeof result?.message === 'string' ? result.message : (responseText.trim().slice(0, 240) || upstream.statusText || 'El proveedor rechazó la solicitud.'))));
           const isOpenRouterLimit = provider.includes('openrouter') && upstream.status === 403 && /key limit exceeded|total limit|limit.*\$0\.00/i.test(apiMessage);
           const friendlyMessage = isOpenRouterLimit
             ? 'La API key de OpenRouter alcanzó su límite total (posiblemente $0.00). Cambia el límite/crédito de la clave en OpenRouter o usa otro proveedor; cambiar el modelo no lo soluciona.'
-            : apiMessage.slice(0, 300);
+            : isNvidiaVisualRequest && upstream.status === 404
+              ? `NVIDIA no encontró el endpoint visual ${visualRequestUrl}. Detalle: ${apiMessage.slice(0, 220)}. Comprueba el acceso al modelo en NVIDIA API Catalog.`
+              : apiMessage.slice(0, 300);
           return json({ error: `${provider.toUpperCase()} (HTTP ${upstream.status}): ${friendlyMessage}` }, upstream.status === 429 ? 429 : 502);
         }
         const reply = isAnthropic
