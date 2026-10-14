@@ -145,3 +145,26 @@ pre, .font-mono { overflow-wrap: anywhere; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+
+/* Acentos globales discretos: neutralizar clases antiguas cyan, violet y purple */
+[class*="text-cyan-"], [class*="text-violet-"], [class*="text-purple-"] {
+  color: #c8c8c8 !important;
+}
+[class*="bg-cyan-"], [class*="bg-violet-"], [class*="bg-purple-"] {
+  background-color: #242527 !important;
+  background-image: none !important;
+}
+[class*="border-cyan-"], [class*="border-violet-"], [class*="border-purple-"] {
+  border-color: rgba(210, 210, 210, .18) !important;
+}
+[class*="hover\\:text-cyan-"]:hover, [class*="hover\\:text-violet-"]:hover, [class*="hover\\:text-purple-"]:hover {
+  color: #f0f0f0 !important;
+}
+[class*="hover\\:bg-cyan-"]:hover, [class*="hover\\:bg-violet-"]:hover, [class*="hover\\:bg-purple-"]:hover {
+  background-color: #303133 !important;
+}
+[class*="focus\\:ring-cyan-"]:focus, [class*="focus\\:border-cyan-"]:focus {
+  --tw-ring-color: rgba(210, 210, 210, .22) !important;
+  border-color: #a6a6a6 !important;
+}
