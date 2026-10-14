@@ -755,6 +755,11 @@ export default {
         if (!isGemini && !isAnthropic && attachments.some(item => item.mimeType.startsWith('audio/') && !['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav'].includes(item.mimeType))) {
           return json({ error: 'Para audio en esta API, usa MP3 o WAV. La compatibilidad final depende del modelo seleccionado.' }, 415);
         }
+        // Detect image intent before choosing a provider endpoint. This prevents
+        // image prompts from being answered by a text-only model such as Nemotron.
+        const requestsImageGeneration = /(?:genera|generar|crea|crear|dibuja|dibujar|hazme|haz|produce|produzca|make|generate|create|draw|design)\s+(?:(?:me|una|un|la|el)\s+)*(?:una?\s+)?(?:imagen|imágenes|imagenes|foto|fotografía|ilustración|ilustracion|dibujo|logo|portada|image|picture|photo|illustration|drawing|artwork|icon|thumbnail)/i.test(message)
+          || /(?:imagen|image)\s+(?:de|of)\s+/i.test(message)
+          || /^(?:dibuja|dibujar|draw)\s+/i.test(message);
         let upstream: Response;
         try {
           if (isAnthropic) {
@@ -800,9 +805,11 @@ export default {
               }),
               signal: AbortSignal.timeout(45000),
             });
-          } else if (provider.includes('nvidia') && /(?:flux|stable[-_. ]?diffusion|sdxl|image[-_. ]?generation)/i.test(modelId)) {
+          } else if (provider.includes('nvidia') && (requestsImageGeneration || /(?:flux|stable[-_. ]?diffusion|sdxl|image[-_. ]?generation)/i.test(modelId))) {
             // NVIDIA's image models use the Visual GenAI inference API, not /chat/completions.
-            let modelSlug = modelId.replace(/^models\//i, '').replace(/^nvidia\//i, '').replace(/^\/+|\/+$/g, '');
+            let modelSlug = requestsImageGeneration && !/(?:flux|stable[-_. ]?diffusion|sdxl|image[-_. ]?generation)/i.test(modelId)
+              ? 'black-forest-labs/flux.2-klein-4b'
+              : modelId.replace(/^models\\//i, '').replace(/^nvidia\\//i, '').replace(/^\\/+|\\/+$/g, '');
             // Allow common short IDs as well as NVIDIA's publisher/model IDs.
             const canonicalImageModels: Record<string, string> = {
               'flux.2-klein-4b': 'black-forest-labs/flux.2-klein-4b',
@@ -849,9 +856,6 @@ export default {
               else if (item.mimeType.startsWith('audio/')) currentContent.push({ type: 'input_audio', input_audio: { data: item.data, format: item.mimeType.includes('wav') ? 'wav' : 'mp3' } });
             }
             const currentUserContent = attachments.length ? currentContent : message;
-            const requestsImageGeneration = /(?:genera|generar|crea|crear|dibuja|dibujar|hazme|haz|produce|produzca|make|generate|create|draw|design)\s+(?:(?:me|una|un|la|el)\s+)*(?:una?\s+)?(?:imagen|imágenes|imagenes|foto|fotografía|ilustración|ilustracion|dibujo|logo|portada|image|picture|photo|illustration|drawing|artwork|icon|thumbnail)/i.test(message)
-              || /(?:imagen|image)\s+(?:de|of)\s+/i.test(message)
-              || /^(?:dibuja|dibujar|draw)\s+/i.test(message);
             const openRouterImageTool = provider.includes('openrouter') && requestsImageGeneration
               ? {
                   modalities: ['text', 'image'],
