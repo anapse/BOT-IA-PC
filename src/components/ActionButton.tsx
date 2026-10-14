@@ -6,7 +6,7 @@ export const ActionButton = ({
   variant = 'primary',
   icon,
   className = '',
-  type = 'button',
+  type,
 }: {
   label: string;
   onClick: (e?: any) => void;
