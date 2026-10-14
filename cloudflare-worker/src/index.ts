@@ -809,7 +809,7 @@ export default {
             // NVIDIA's image models use the Visual GenAI inference API, not /chat/completions.
             let modelSlug = requestsImageGeneration && !/(?:flux|stable[-_. ]?diffusion|sdxl|image[-_. ]?generation)/i.test(modelId)
               ? 'black-forest-labs/flux.2-klein-4b'
-              : modelId.replace(/^models\\//i, '').replace(/^nvidia\\//i, '').replace(/^\\/+|\\/+$/g, '');
+              : modelId.replace(/^models\//i, '').replace(/^nvidia\//i, '').replace(/^\/+|\/+$/g, '');
             // Allow common short IDs as well as NVIDIA's publisher/model IDs.
             const canonicalImageModels: Record<string, string> = {
               'flux.2-klein-4b': 'black-forest-labs/flux.2-klein-4b',
