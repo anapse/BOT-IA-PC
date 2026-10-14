@@ -8,6 +8,7 @@ import { Plus, Trash2, Pencil, Globe, KeyRound, CheckCircle2, CircleAlert, PlugZ
 type ProviderType = 'openai' | 'anthropic' | 'google' | 'openrouter' | 'nvidia' | 'openai-compatible';
 type Provider = {
   id: string; name: string; type: ProviderType; endpoint?: string; apiKey?: string;
+  defaultModel?: string; customEndpoint?: string; promptLimit?: number; promptLimitType?: 'characters' | 'tokens';
   status: 'activo' | 'inactivo'; createdAt?: string; lastTestAt?: string; lastTestStatus?: 'ok' | 'error';
 };
 
@@ -29,6 +30,10 @@ export const ProvidersPage = () => {
   const [type, setType] = useState<ProviderType>('openrouter');
   const [endpoint, setEndpoint] = useState('https://openrouter.ai/api/v1');
   const [apiKey, setApiKey] = useState('');
+  const [defaultModel, setDefaultModel] = useState('');
+  const [customEndpoint, setCustomEndpoint] = useState('');
+  const [promptLimit, setPromptLimit] = useState('');
+  const [promptLimitType, setPromptLimitType] = useState<'characters' | 'tokens'>('characters');
   const [status, setStatus] = useState<'activo' | 'inactivo'>('activo');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -42,12 +47,17 @@ export const ProvidersPage = () => {
   const reset = () => {
     setEditingId(null); setName(''); setType('openrouter');
     setEndpoint('https://openrouter.ai/api/v1'); setApiKey('');
+    setDefaultModel(''); setCustomEndpoint(''); setPromptLimit(''); setPromptLimitType('characters');
     setStatus('activo'); setError(''); setNotice('');
   };
   const openCreate = () => { reset(); setModalOpen(true); };
   const openEdit = (provider: Provider) => {
     setEditingId(provider.id); setName(provider.name); setType(provider.type);
-    setEndpoint(provider.endpoint || ''); setApiKey(''); setStatus(provider.status || 'activo');
+    setEndpoint(provider.endpoint || ''); setApiKey('');
+    setDefaultModel(provider.defaultModel || ''); setCustomEndpoint(provider.customEndpoint || '');
+    setPromptLimit(provider.promptLimit != null && Number(provider.promptLimit) > 0 ? String(provider.promptLimit) : '');
+    setPromptLimitType(provider.promptLimitType === 'tokens' ? 'tokens' : 'characters');
+    setStatus(provider.status || 'activo');
     setError(''); setNotice(''); setModalOpen(true);
   };
   const sync = async () => {
@@ -65,7 +75,7 @@ export const ProvidersPage = () => {
     try {
       const response = await fetch('https://bot-ia-pc.elherreroanapse.workers.dev/providers/test', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type, endpoint: endpoint.trim(), apiKey: apiKey.trim() })
+        body: JSON.stringify({ type, endpoint: endpoint.trim(), customEndpoint: customEndpoint.trim(), apiKey: apiKey.trim() })
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'No se pudo verificar el proveedor.');
@@ -79,7 +89,12 @@ export const ProvidersPage = () => {
     if (!editingId && !apiKey.trim()) { setError('La API key es obligatoria para registrar el proveedor.'); return; }
     setBusy(true); setError(''); setNotice('');
     try {
-      const value: any = { name: name.trim(), type, endpoint: endpoint.trim(), status, updatedAt: new Date().toISOString() };
+      const value: any = {
+        name: name.trim(), type, endpoint: endpoint.trim(), status, updatedAt: new Date().toISOString(),
+        defaultModel: defaultModel.trim(), customEndpoint: customEndpoint.trim(),
+        promptLimit: promptLimit.trim() && Number(promptLimit) > 0 ? Math.floor(Number(promptLimit)) : '',
+        promptLimitType,
+      };
       if (apiKey.trim()) value.apiKey = apiKey.trim();
       if (editingId) await updateData('providers', editingId, value);
       else await addData('providers', { ...value, createdAt: new Date().toISOString() });
@@ -125,6 +140,17 @@ export const ProvidersPage = () => {
         <label className="block text-xs text-slate-400">Tipo de proveedor<select value={type} onChange={e=>{const item=providerOptions.find(p=>p.value===e.target.value);setType(e.target.value as ProviderType);if(item?.endpoint)setEndpoint(item.endpoint);}} className="mt-1 w-full rounded-lg bg-slate-950 border border-slate-700 p-2.5 text-sm text-slate-100">{providerOptions.map(p=><option key={p.value} value={p.value}>{p.label}</option>)}</select></label>
         <label className="block text-xs text-slate-400">Endpoint base<input value={endpoint} onChange={e=>setEndpoint(e.target.value)} className="mt-1 w-full rounded-lg bg-slate-950 border border-slate-700 p-2.5 text-sm text-slate-100" placeholder="https://api.example.com/v1"/></label>
         <label className="block text-xs text-slate-400">API key {editingId?'(dejar vacío para conservar la actual)':''}<input type="password" autoComplete="new-password" value={apiKey} onChange={e=>setApiKey(e.target.value)} className="mt-1 w-full rounded-lg bg-slate-950 border border-slate-700 p-2.5 text-sm text-slate-100" placeholder={editingId?'•••••••• (guardada)':'Pega aquí la API key'} required={!editingId}/></label>
+        <details className="rounded-lg border border-slate-700 bg-slate-950/50 p-3 space-y-3">
+          <summary className="cursor-pointer text-sm font-medium text-cyan-300">Opciones avanzadas (opcionales)</summary>
+          <p className="text-xs leading-5 text-slate-500">Si dejas estos campos vacíos, se conserva el comportamiento normal del proveedor.</p>
+          <label className="block text-xs text-slate-400">Modelo predeterminado<input value={defaultModel} onChange={e=>setDefaultModel(e.target.value)} className="mt-1 w-full rounded-lg bg-slate-950 border border-slate-700 p-2.5 text-sm text-slate-100" placeholder="Ej. black-forest-labs/flux.2-klein-4b" /></label>
+          <label className="block text-xs text-slate-400">Endpoint de inferencia personalizado<input value={customEndpoint} onChange={e=>setCustomEndpoint(e.target.value)} className="mt-1 w-full rounded-lg bg-slate-950 border border-slate-700 p-2.5 text-sm text-slate-100" placeholder="https://.../ruta/completa" /><span className="mt-1 block text-[11px] text-slate-500">URL completa de la ruta de inferencia; si está vacío, se usa la ruta habitual.</span></label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label className="block text-xs text-slate-400">Límite del prompt<input type="number" min="1" step="1" value={promptLimit} onChange={e=>setPromptLimit(e.target.value)} className="mt-1 w-full rounded-lg bg-slate-950 border border-slate-700 p-2.5 text-sm text-slate-100" placeholder="Ej. 800" /></label>
+            <label className="block text-xs text-slate-400">Unidad del límite<select value={promptLimitType} onChange={e=>setPromptLimitType(e.target.value as 'characters' | 'tokens')} className="mt-1 w-full rounded-lg bg-slate-950 border border-slate-700 p-2.5 text-sm text-slate-100"><option value="characters">Caracteres</option><option value="tokens">Tokens (estimados)</option></select></label>
+          </div>
+          <p className="text-[11px] text-slate-500">El límite se aplica al mensaje antes de enviarlo. Los tokens se estiman de forma conservadora para funcionar con proveedores distintos.</p>
+        </details>
         <label className="block text-xs text-slate-400">Estado<select value={status} onChange={e=>setStatus(e.target.value as any)} className="mt-1 w-full rounded-lg bg-slate-950 border border-slate-700 p-2.5 text-sm text-slate-100"><option value="activo">Activo</option><option value="inactivo">Inactivo</option></select></label>
         <div className="flex flex-wrap gap-2 justify-end pt-2"><button type="button" onClick={testConnection} disabled={busy} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-cyan-700 text-cyan-300 text-sm disabled:opacity-50"><CircleAlert size={15}/>{busy?'Probando…':'Probar conexión'}</button><button disabled={busy} className="px-4 py-2 rounded-lg bg-cyan-600 text-white text-sm disabled:opacity-50">{busy?'Guardando…':'Guardar proveedor'}</button></div>
       </form>
