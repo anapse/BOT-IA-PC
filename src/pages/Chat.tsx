@@ -213,9 +213,18 @@ export const ChatPage = () => {
       const list = await fetchProviderCatalog(workerUrl, provider) as CatalogModel[];
       setCatalogModels(list);
       const imageModelId = list.find(item => (item.outputModalities || []).includes('image') || /flux|imagen|stable[ ._-]?diffusion|sdxl|image[ ._-]?generation|dall[ ._-]?e|nano[ ._-]?banana|kandinsky|playground/i.test(`${item.name} ${item.id}`))?.id || '';
-      const nextModelId = imageMode ? imageModelId : (list.some(item => item.id === selectedModelId) ? selectedModelId : (list[0]?.id || ''));
+      // OpenRouter exposes text models in /models; its server-side image tool can generate
+      // images with a compatible text model, so preserve/select one instead of clearing it.
+      const openRouterImageTool = imageMode && String(provider.type || '').toLowerCase().includes('openrouter');
+      const nextModelId = imageMode
+        ? (imageModelId || (openRouterImageTool ? (list.find(item => item.id === selectedModelId)?.id || list[0]?.id || '') : ''))
+        : (list.some(item => item.id === selectedModelId) ? selectedModelId : (list[0]?.id || ''));
       setSelectedModelId(nextModelId);
+      if (imageMode && targetMode === 'model' && activeConversation && nextModelId) {
+        updateConversationTarget(activeConversation.id, 'model', nextModelId, id);
+      }
       if (!list.length) setError('El proveedor respondió, pero no ofreció modelos disponibles.');
+      else if (imageMode && !nextModelId) setError('Este proveedor no ofrece un modelo de imagen disponible. Selecciona OpenRouter con una clave válida o un modelo visual compatible.');
     } catch (e: any) {
       setCatalogModels([]);
       if (targetMode === 'model') setError(e?.message || 'No se pudo leer la configuración guardada del proveedor.');
