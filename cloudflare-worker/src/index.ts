@@ -498,7 +498,24 @@ export default {
       const provider = String(configuredProvider?.type || legacyModel?.provider || '').toLowerCase();
       const apiKey = String(configuredProvider?.apiKey || legacyModel?.apiKey || '').trim();
       const endpoint = String(configuredProvider?.endpoint || legacyModel?.endpoint || '').trim().replace(/\/+$/, '');
-      const configuredModelId = String(agent.modelId || agent.model || legacyModel?.modelId || '').trim();
+      const customEndpoint = typeof configuredProvider?.customEndpoint === 'string' ? configuredProvider.customEndpoint.trim() : '';
+      const defaultModel = typeof configuredProvider?.defaultModel === 'string' ? configuredProvider.defaultModel.trim() : '';
+      const configuredModelId = defaultModel || String(agent.modelId || agent.model || legacyModel?.modelId || '').trim();
+      const promptLimit = Number(configuredProvider?.promptLimit);
+      const promptLimitType = configuredProvider?.promptLimitType === 'tokens' ? 'tokens' : 'characters';
+      if (Number.isFinite(promptLimit) && promptLimit > 0 && message) {
+        const maxChars = Math.max(1, Math.floor(promptLimitType === 'tokens' ? promptLimit * 4 : promptLimit));
+        if (message.length > maxChars) message = message.slice(0, maxChars).replace(/[\uD800-\uDBFF]$/, '');
+      }
+      if (customEndpoint) {
+        try {
+          const customUrl = new URL(customEndpoint);
+          if (customUrl.protocol !== 'https:' || customUrl.username || customUrl.password || /^(localhost|127\.|10\.|192\.168\.|169\.254\.)/i.test(customUrl.hostname) || /^172\.(1[6-9]|2[0-9]|3[01])\./i.test(customUrl.hostname)) throw new Error('Invalid provider URL');
+        } catch {
+          await send('El endpoint de inferencia personalizado no es válido. Usa una URL HTTPS pública.');
+          return json({ status: 'invalid_custom_endpoint' }, 400);
+        }
+      }
       const isGemini = provider.includes('gemini') || provider === 'google' || provider.includes('google');
       const isAnthropic = provider.includes('anthropic') || provider === 'claude';
       const isOpenAICompatible = provider === 'openai' || provider === 'openai-compatible' || provider.includes('openrouter') || provider.includes('nvidia') || provider.includes('deepseek') || provider.includes('groq') || provider.includes('together') || provider.includes('mistral') || provider.includes('xai');
@@ -526,7 +543,7 @@ export default {
       try {
         if (isAnthropic) {
           const base = (endpoint || 'https://api.anthropic.com/v1').replace(/\/+$/, '');
-          const requestUrl = base.endsWith('/messages') ? base : base + '/messages';
+          const requestUrl = customEndpoint || (base.endsWith('/messages') ? base : base + '/messages');
           const parsedUrl = new URL(requestUrl);
           if (parsedUrl.protocol !== 'https:') throw new Error('Invalid provider URL protocol');
           requestHost = parsedUrl.hostname;
@@ -538,7 +555,7 @@ export default {
           });
         } else if (isGemini) {
           const base = (endpoint || 'https://generativelanguage.googleapis.com/v1beta').replace(/\/+$/, '');
-          const requestUrl = base + '/models/' + encodeURIComponent(modelId) + ':generateContent?key=' + encodeURIComponent(apiKey);
+          const requestUrl = customEndpoint || (base + '/models/' + encodeURIComponent(modelId) + ':generateContent?key=' + encodeURIComponent(apiKey));
           const parsedUrl = new URL(requestUrl);
           if (parsedUrl.protocol !== 'https:') throw new Error('Invalid provider URL protocol');
           requestHost = parsedUrl.hostname;
@@ -567,7 +584,7 @@ export default {
             : provider.includes('xai') ? 'https://api.x.ai/v1'
             : 'https://api.openai.com/v1';
           const base = (endpoint || defaultBase).replace(/\/+$/, '');
-          const requestUrl = base.endsWith('/chat/completions') ? base : base + '/chat/completions';
+          const requestUrl = customEndpoint || (base.endsWith('/chat/completions') ? base : base + '/chat/completions');
           const parsedUrl = new URL(requestUrl);
           if (parsedUrl.protocol !== 'https:') throw new Error('Invalid provider URL protocol');
           requestHost = parsedUrl.hostname;
