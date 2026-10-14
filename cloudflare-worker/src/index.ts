@@ -518,13 +518,25 @@ export default {
       }
       const isGemini = provider.includes('gemini') || provider === 'google' || provider.includes('google');
       const isAnthropic = provider.includes('anthropic') || provider === 'claude';
-      const isFluxImage = provider.includes('nvidia') && (/flux/i.test(modelId || configuredModelId) || /flux/i.test(customEndpoint));
+      const isFluxImage = provider.includes('nvidia') && (/flux/i.test(configuredModelId) || /flux/i.test(customEndpoint));
       const isOpenAICompatible = provider === 'openai' || provider === 'openai-compatible' || provider.includes('openrouter') || provider.includes('nvidia') || provider.includes('deepseek') || provider.includes('groq') || provider.includes('together') || provider.includes('mistral') || provider.includes('xai');
-      if (!model || model.status === 'inactivo' || model.status === 'pausado' || !apiKey || (!isGemini && !isAnthropic && !isOpenAICompatible)) {
-        await send('El proveedor o modelo asignado no está listo. Comprueba que el proveedor esté activo, tenga API key y que el agente tenga un modelo compatible asignado.');
-        return json({ status: 'model_unavailable' });
-      }
       const modelId = isGemini ? configuredModelId.replace(/^models\//i, '') : configuredModelId;
+      if (!model) {
+        await send('No encuentro el proveedor asignado a este agente en la configuración sincronizada de Telegram. Abre Agentes, selecciona de nuevo NVIDIA Imágenes, guarda y verifica que la sincronización termine correctamente.');
+        return json({ status: 'provider_not_found' });
+      }
+      if (model.status === 'inactivo' || model.status === 'pausado') {
+        await send('El proveedor o modelo está inactivo. Actívalo en Proveedores y vuelve a sincronizar la configuración.');
+        return json({ status: 'model_inactive' });
+      }
+      if (!apiKey) {
+        await send('El proveedor no tiene una API key disponible en la configuración sincronizada. En Proveedores, vuelve a guardar la clave y sincroniza; no la envíes por Telegram.');
+        return json({ status: 'provider_key_missing' });
+      }
+      if (!isGemini && !isAnthropic && !isOpenAICompatible) {
+        await send('El tipo de proveedor configurado no es compatible con Telegram: ' + (provider || '(vacío)') + '. En Proveedores selecciona NVIDIA NIM como tipo.');
+        return json({ status: 'provider_type_unsupported' });
+      }
       if (!modelId) {
         await send('El agente no tiene un ID de modelo asignado. Abre BOT IA PC y guarda el modelo del agente.');
         return json({ status: 'invalid_model' });
