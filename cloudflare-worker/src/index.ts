@@ -762,6 +762,7 @@ export default {
           || /^(?:dibuja|dibujar|draw)\s+/i.test(message);
         let upstream: Response;
         let visualRequestUrl = '';
+        let providerRequestUrl = '';
         let isNvidiaVisualRequest = false;
         try {
           if (isAnthropic) {
@@ -828,6 +829,7 @@ export default {
             const parsedUrl = new URL(requestUrl);
             if (parsedUrl.protocol !== 'https:') throw new Error('Invalid provider URL protocol');
             visualRequestUrl = requestUrl;
+            providerRequestUrl = requestUrl;
             isNvidiaVisualRequest = true;
             // NVIDIA's FLUX.2 Klein endpoint accepts only four steps and uses
             // the exact "Image Generation" mode; FLUX.1 models use different limits.
@@ -853,6 +855,7 @@ export default {
               : provider.includes('xai') ? 'https://api.x.ai/v1/chat/completions'
               : 'https://api.openai.com/v1/chat/completions';
             const requestEndpoint = temporary ? defaultEndpoint : (endpoint ? (endpoint.replace(/\/+$/, '').endsWith('/chat/completions') ? endpoint.replace(/\/+$/, '') : endpoint.replace(/\/+$/, '') + '/chat/completions') : defaultEndpoint);
+            providerRequestUrl = requestEndpoint;
             const currentContent: any[] = [];
             if (message) currentContent.push({ type: 'text', text: message });
             for (const item of attachments) {
@@ -901,8 +904,10 @@ export default {
           const isOpenRouterLimit = provider.includes('openrouter') && upstream.status === 403 && /key limit exceeded|total limit|limit.*\$0\.00/i.test(apiMessage);
           const friendlyMessage = isOpenRouterLimit
             ? 'La API key de OpenRouter alcanzó su límite total (posiblemente $0.00). Cambia el límite/crédito de la clave en OpenRouter o usa otro proveedor; cambiar el modelo no lo soluciona.'
-            : isNvidiaVisualRequest && upstream.status === 404
-              ? `NVIDIA no encontró el endpoint visual ${visualRequestUrl}. Detalle: ${apiMessage.slice(0, 220)}. Comprueba el acceso al modelo en NVIDIA API Catalog.`
+            : provider.includes('nvidia') && upstream.status === 404
+              ? isNvidiaVisualRequest
+                ? `NVIDIA devolvió HTTP 404 para el endpoint visual ${visualRequestUrl}. Respuesta original: ${apiMessage.slice(0, 220)}. La URL está documentada; el 404 puede indicar que el endpoint no está habilitado para esta cuenta o que NVIDIA no encuentra esa función. Comprueba el acceso al modelo en NVIDIA API Catalog.`
+                : `NVIDIA devolvió HTTP 404 desde ${providerRequestUrl || 'un endpoint no identificado'}. La solicitud no entró en la ruta visual de FLUX.2 Klein; revisa que esté activado el modo Imágenes y que el Worker desplegado incluya el enrutamiento visual. Respuesta original: ${apiMessage.slice(0, 180)}`
               : apiMessage.slice(0, 300);
           return json({ error: `${provider.toUpperCase()} (HTTP ${upstream.status}): ${friendlyMessage}` }, upstream.status === 429 ? 429 : 502);
         }
