@@ -26,7 +26,7 @@ export default function App() {
     return (
       <div className="flex items-center justify-center h-screen bg-slate-950 text-slate-400 text-sm">
         <div className="flex items-center gap-3">
-          <div className="w-5 h-5 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
+          <div className="w-5 h-5 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
           <span>Cargando plataforma Bot IA PC...</span>
         </div>
       </div>
@@ -38,7 +38,7 @@ export default function App() {
       <div className="flex flex-col items-center justify-center min-h-screen bg-slate-950 px-4 text-center">
         <div className="w-full max-w-md p-8 bg-slate-900/80 border border-slate-800 rounded-2xl shadow-2xl space-y-6">
           <div className="space-y-2">
-            <div className="inline-flex p-3 bg-violet-950/60 text-violet-300 rounded-xl border border-violet-700/40 mb-2">
+            <div className="inline-flex p-3 bg-slate-800 text-slate-200 rounded-xl border border-slate-700 mb-2">
               <span className="text-2xl font-bold tracking-tight">BOT IA PC</span>
             </div>
             <h1 className="text-xl font-bold text-slate-100">Panel de Administración</h1>
@@ -49,7 +49,7 @@ export default function App() {
 
           <button
             onClick={signIn}
-            className="w-full flex items-center justify-center gap-3 py-3 px-4 bg-violet-600 hover:bg-violet-500 text-white font-medium text-sm rounded-xl transition-all shadow-lg shadow-violet-950/50"
+            className="w-full flex items-center justify-center gap-3 py-3 px-4 bg-slate-700 hover:bg-slate-600 text-white font-medium text-sm rounded-xl transition-all shadow-lg shadow-black/30"
           >
             <svg className="w-4 h-4" viewBox="0 0 24 24">
               <path
