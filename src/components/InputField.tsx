@@ -18,7 +18,7 @@ export const InputField = ({
   isSecret?: boolean;
   placeholder?: string;
   name?: string;
-  autoComplete?: string;
+  autoComplete?: 'off' | 'new-password';
 }) => {
   const [show, setShow] = useState(false);
   const handleCopy = () => navigator.clipboard.writeText(value);
