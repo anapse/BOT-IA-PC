@@ -6,12 +6,14 @@ export const ActionButton = ({
   variant = 'primary',
   icon,
   className = '',
+  type,
 }: {
   label: string;
   onClick: (e?: any) => void;
   variant?: 'primary' | 'secondary' | 'danger';
   icon?: ReactNode;
   className?: string;
+  type?: 'button' | 'submit' | 'reset';
 }) => {
   const baseClass = "px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 border flex items-center justify-center gap-2";
   const variants = {
@@ -20,7 +22,7 @@ export const ActionButton = ({
     danger: "bg-red-950 text-red-400 border-red-900 hover:border-red-800",
   };
   return (
-    <button onClick={onClick} className={`${baseClass} ${variants[variant]} ${className}`}>
+    <button type={type} onClick={onClick} className={`${baseClass} ${variants[variant]} ${className}`}>
       {icon}
       <span>{label}</span>
     </button>

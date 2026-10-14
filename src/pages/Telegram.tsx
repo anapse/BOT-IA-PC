@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card } from '../components/Card';
 import { InputField } from '../components/InputField';
 import { ActionButton } from '../components/ActionButton';
@@ -34,6 +34,7 @@ export const TelegramPage = () => {
   const [agentIds, setAgentIds] = useState<string[]>([]);
   const [allowedUsersText, setAllowedUsersText] = useState('');
   const [saving, setSaving] = useState(false);
+  const saveRequestedRef = useRef(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [syncError, setSyncError] = useState('');
 
@@ -120,6 +121,9 @@ export const TelegramPage = () => {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Password managers can trigger form submission while autofilling. Only accept an explicit Save click.
+    if (!saveRequestedRef.current) return;
+    saveRequestedRef.current = false;
     if (!name.trim() || (!editingConnection && !botToken.trim()) || agentIds.length === 0) {
       setErrorMsg(agentIds.length === 0 ? 'Selecciona al menos un agente para este bot.' : editingConnection ? 'El nombre del bot es obligatorio.' : 'Nombre y Token del bot son obligatorios.');
       return;
@@ -301,7 +305,7 @@ export const TelegramPage = () => {
               <button onClick={() => { setIsModalOpen(false); resetForm(); }} className="text-slate-400 hover:text-slate-200">✕</button>
             </div>
 
-            <form onSubmit={handleSave} className="p-5 space-y-4">
+            <form onSubmit={handleSave} autoComplete="off" className="p-5 space-y-4">
               {errorMsg && (
                 <div className="p-3 bg-red-950/50 border border-red-800/60 text-red-300 text-xs rounded">
                   {errorMsg}
@@ -313,6 +317,8 @@ export const TelegramPage = () => {
                 value={name}
                 onChange={setName}
                 placeholder="Ej. Asistente Telegram 24/7"
+                name="telegram-bot-display-name"
+                autoComplete="off"
               />
 
               <InputField
@@ -320,6 +326,8 @@ export const TelegramPage = () => {
                 value={botUsername}
                 onChange={setBotUsername}
                 placeholder="@MiBotEjemplo_bot"
+                name="telegram-bot-username"
+                autoComplete="off"
               />
 
               <InputField
@@ -328,6 +336,9 @@ export const TelegramPage = () => {
                 onChange={setBotToken}
                 placeholder={editingConnection ? "Deja vacío para conservar el token actual" : "123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ"}
                 isSecret
+                name="telegram-bot-token"
+                autoComplete="off"
+                secretInputType="text"
               />
 
               <div className="space-y-2">
@@ -361,7 +372,7 @@ export const TelegramPage = () => {
 
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-slate-300">Usuarios permitidos (opcional)</label>
-                <textarea value={allowedUsersText} onChange={(e) => setAllowedUsersText(e.target.value)} rows={3} placeholder={"Ej. @usuario1, 123456789\nPuedes separar usuarios por comas o líneas"} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-cyan-500" />
+                <textarea name="telegram-allowed-users" autoComplete="off" value={allowedUsersText} onChange={(e) => setAllowedUsersText(e.target.value)} rows={3} placeholder={"Ej. @usuario1, 123456789\nPuedes separar usuarios por comas o líneas"} className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-cyan-500" />
                 <p className="text-xs text-slate-500">Déjalo vacío para que cualquiera pueda usar el bot. Admite nombres de usuario de Telegram (@usuario) o IDs numéricos.</p>
               </div>
 
@@ -375,7 +386,8 @@ export const TelegramPage = () => {
                 </button>
                 <ActionButton
                   label={saving ? 'Guardando...' : editingConnection ? 'Guardar Cambios' : 'Guardar Conexión'}
-                  onClick={() => {}}
+                  type="submit"
+                  onClick={() => { saveRequestedRef.current = true; }}
                 />
               </div>
             </form>

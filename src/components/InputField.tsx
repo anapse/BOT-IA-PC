@@ -8,6 +8,9 @@ export const InputField = ({
   type = 'text',
   isSecret = false,
   placeholder = '',
+  name,
+  autoComplete = 'off',
+  secretInputType = 'password',
 }: {
   label: string;
   value: string;
@@ -15,6 +18,9 @@ export const InputField = ({
   type?: string;
   isSecret?: boolean;
   placeholder?: string;
+  name?: string;
+  autoComplete?: 'off' | 'new-password';
+  secretInputType?: 'password' | 'text';
 }) => {
   const [show, setShow] = useState(false);
   const handleCopy = () => navigator.clipboard.writeText(value);
@@ -24,14 +30,16 @@ export const InputField = ({
       <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">{label}</label>
       <div className="flex gap-2">
         <input
-          type={isSecret && !show ? 'password' : type}
+          type={isSecret && !show ? secretInputType : type}
+          name={name}
+          autoComplete={autoComplete}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
-          className="flex-1 px-4 py-2 border border-slate-700 bg-slate-950 rounded-md text-sm text-slate-100 placeholder:text-slate-600 focus:ring-1 focus:ring-cyan-500 focus:border-cyan-500 outline-none transition-all"
+          className={`flex-1 px-4 py-2 border border-slate-700 bg-slate-950 rounded-md text-sm text-slate-100 placeholder:text-slate-600 focus:ring-1 focus:ring-cyan-500 focus:border-cyan-500 outline-none transition-all ${isSecret && !show && secretInputType === 'text' ? '[-webkit-text-security:disc]' : ''}`}
         />
-        {isSecret && <button onClick={() => setShow(!show)} className="p-2 text-slate-500 hover:text-cyan-400 transition-colors"><EyeOff size={16} /></button>}
-        <button onClick={handleCopy} className="p-2 text-slate-500 hover:text-cyan-400 transition-colors"><Copy size={16} /></button>
+        {isSecret && <button type="button" onClick={() => setShow(!show)} className="p-2 text-slate-500 hover:text-cyan-400 transition-colors"><EyeOff size={16} /></button>}
+        <button type="button" onClick={handleCopy} className="p-2 text-slate-500 hover:text-cyan-400 transition-colors"><Copy size={16} /></button>
       </div>
     </div>
   );
