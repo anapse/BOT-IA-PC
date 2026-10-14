@@ -541,7 +541,8 @@ export default {
         await send('No encuentro el proveedor asignado a este agente en la configuración sincronizada de Telegram. Abre Agentes, selecciona de nuevo NVIDIA Imágenes, guarda y verifica que la sincronización termine correctamente.');
         return json({ status: 'provider_not_found' });
       }
-      if (model.status === 'inactivo' || model.status === 'pausado') {
+      const normalizedModelStatus = String(model.status ?? 'activo').trim().toLowerCase();
+      if (['inactivo', 'pausado', 'inactive', 'paused', 'disabled'].includes(normalizedModelStatus)) {
         await send('El proveedor o modelo está inactivo. Actívalo en Proveedores y vuelve a sincronizar la configuración.');
         return json({ status: 'model_inactive' });
       }
