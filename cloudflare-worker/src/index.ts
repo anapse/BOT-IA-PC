@@ -54,7 +54,11 @@ function extractOutputAttachments(providerResult: any, isGemini: boolean, isAnth
     for (const artifact of providerResult.artifacts) {
       const data = artifact?.base64 || artifact?.image_base64 || artifact?.bytesBase64Encoded;
       if (typeof data === 'string' && data.length <= 14_000_000) {
-        attachments.push({ name: `imagen-${attachments.length + 1}.png`, mimeType: String(artifact?.mime_type || artifact?.mimeType || 'image/png'), data });
+        // NVIDIA FLUX artifacts are commonly JPEGs; detect the format when the
+        // response does not provide an explicit MIME type.
+        const mimeType = String(artifact?.mime_type || artifact?.mimeType || (data.startsWith('/9j/') ? 'image/jpeg' : 'image/png'));
+        const extension = mimeType === 'image/jpeg' ? 'jpg' : mimeType === 'image/webp' ? 'webp' : mimeType === 'image/gif' ? 'gif' : 'png';
+        attachments.push({ name: `imagen-${attachments.length + 1}.${extension}`, mimeType, data });
       } else if (typeof artifact?.url === 'string' && /^https:\/\//i.test(artifact.url)) {
         attachments.push({ name: `imagen-${attachments.length + 1}`, mimeType: 'image/remote', url: artifact.url });
       }
@@ -831,13 +835,13 @@ export default {
             visualRequestUrl = requestUrl;
             providerRequestUrl = requestUrl;
             isNvidiaVisualRequest = true;
-            // NVIDIA's FLUX.2 Klein endpoint accepts only four steps and uses
-            // the exact "Image Generation" mode; FLUX.1 models use different limits.
+            // FLUX.2 Klein rejects the legacy "mode" field and requires cfg_scale >= 1.
+            // Keep its documented four-step limit; other NVIDIA image models use their own defaults.
             const isFlux2Klein = /(?:^|\/)flux\.2-klein-4b$/i.test(modelSlug);
             const isFlux1Schnell = /flux\.1-schnell/i.test(modelSlug);
             const imagePayload = isFlux2Klein
-              ? { prompt: message, mode: 'Image Generation', width: 1024, height: 1024, steps: 4, cfg_scale: 0, samples: 1, seed: 0 }
-              : { prompt: message, mode: 'base', width: 1024, height: 1024, steps: isFlux1Schnell ? 4 : 25, cfg_scale: isFlux1Schnell ? 0 : 3.5, samples: 1, seed: 0 };
+              ? { prompt: message, width: 1024, height: 1024, steps: 4, cfg_scale: 1, samples: 1, seed: 0 }
+              : { prompt: message, mode: 'base', width: 1024, height: 1024, steps: isFlux1Schnell ? 4 : 25, cfg_scale: isFlux1Schnell ? 1 : 3.5, samples: 1, seed: 0 };
             upstream = await fetch(requestUrl, {
               method: 'POST',
               headers: { Accept: 'application/json', 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
