@@ -500,12 +500,14 @@ export default {
         ? providers.find((item: any) => String(item?.id || '').trim() === configuredProviderId) || null
         : null;
       const requestedModelId = String(agent.modelId || agent.model || '').trim();
-      // Recover legacy agents whose providerId became stale after provider edits:
-      // only infer NVIDIA when the agent clearly requests FLUX and exactly one
-      // active NVIDIA provider can satisfy it.
-      if (!configuredProvider && /flux/i.test(requestedModelId)) {
+      // Recover a stale/missing providerId only when the agent or a provider's
+      // configured image endpoint/model identifies NVIDIA FLUX unambiguously.
+      if (!configuredProvider) {
+        const isFluxValue = (value: unknown) => /flux/i.test(String(value ?? ''));
         const nvidiaProviders = providers.filter((item: any) =>
-          String(item?.type || '').trim().toLowerCase() === 'nvidia' && isActiveStatus(item?.status)
+          String(item?.type || '').trim().toLowerCase() === 'nvidia' &&
+          isActiveStatus(item?.status) &&
+          (isFluxValue(requestedModelId) || isFluxValue(item?.defaultModel) || isFluxValue(item?.customEndpoint))
         );
         if (nvidiaProviders.length === 1) configuredProvider = nvidiaProviders[0];
       }
@@ -572,15 +574,38 @@ export default {
       let requestHost = '';
       try {
         if (isFluxImage) {
-          const requestUrl = customEndpoint || 'https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.2-klein-4b';
+          // Match the working web-chat Visual GenAI request. A custom endpoint
+          // always wins; otherwise use the provider endpoint only when it is
+          // already a Visual GenAI URL, then fall back to the canonical FLUX URL.
+          const modelSlug = configuredModelId
+            .replace(/^models\//i, '')
+            .replace(/^nvidia\//i, '')
+            .replace(/^\/+|\/+$/g, '');
+          const canonicalImageModels: Record<string, string> = {
+            'flux.2-klein-4b': 'black-forest-labs/flux.2-klein-4b',
+            'flux.1-dev': 'black-forest-labs/flux.1-dev',
+            'flux.1-schnell': 'black-forest-labs/flux.1-schnell',
+            'flux.1-kontext-dev': 'black-forest-labs/flux.1-kontext-dev',
+            'stable-diffusion-3.5-large': 'stability-ai/stable-diffusion-3.5-large',
+          };
+          const normalizedSlug = canonicalImageModels[modelSlug.toLowerCase()] || modelSlug;
+          const configuredBase = endpoint.replace(/\/+$/, '');
+          const requestUrl = customEndpoint || (/\/v1\/genai\//i.test(configuredBase)
+            ? configuredBase
+            : 'https://ai.api.nvidia.com/v1/genai/' + normalizedSlug.split('/').map((part: string) => encodeURIComponent(part)).join('/'));
           const parsedUrl = new URL(requestUrl);
           if (parsedUrl.protocol !== 'https:') throw new Error('Invalid provider URL protocol');
           requestHost = parsedUrl.hostname;
+          const isFlux2Klein = /(?:^|\/)flux\.2-klein-4b$/i.test(normalizedSlug);
+          const isFlux1Schnell = /flux\.1-schnell/i.test(normalizedSlug);
+          const imagePayload = isFlux2Klein
+            ? { prompt: message, width: 1024, height: 1024, steps: 4, cfg_scale: 1, samples: 1, seed: 0 }
+            : { prompt: message, mode: 'base', width: 1024, height: 1024, steps: isFlux1Schnell ? 4 : 25, cfg_scale: isFlux1Schnell ? 1 : 3.5, samples: 1, seed: 0 };
           aiResponse = await fetch(requestUrl, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + apiKey },
-            body: JSON.stringify({ prompt: message, width: 1024, height: 1024, num_inference_steps: 4 }),
-            signal: AbortSignal.timeout(60000),
+            headers: { Accept: 'application/json', 'Content-Type': 'application/json', Authorization: 'Bearer ' + apiKey },
+            body: JSON.stringify(imagePayload),
+            signal: AbortSignal.timeout(90000),
           });
         } else if (isAnthropic) {
           const base = (endpoint || 'https://api.anthropic.com/v1').replace(/\/+$/, '');
