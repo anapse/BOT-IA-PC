@@ -369,7 +369,7 @@ export const ChatPage = () => {
     setError('');
 
     // El Worker detecta las solicitudes de generación a partir del texto y del modelo seleccionado.
-    const outgoingText = rawText;
+    let outgoingText = rawText;
     let mode: 'agent' | 'model' = activeConversation?.targetMode || targetMode;
     let targetId = activeConversation?.targetId || activeConversation?.agentId || (mode === 'agent' ? selectedAgentId : selectedModelId);
     const providerIdForRequest = activeConversation?.targetProviderId || selectedProviderId;
