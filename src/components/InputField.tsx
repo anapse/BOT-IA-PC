@@ -36,7 +36,7 @@ export const InputField = ({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
-          className={`flex-1 px-4 py-2 border border-slate-700 bg-slate-950 rounded-md text-sm text-slate-100 placeholder:text-slate-600 focus:ring-1 focus:ring-cyan-500 focus:border-cyan-500 outline-none transition-all ${isSecret && !show && secretInputType === 'text' ? '[ -webkit-text-security:disc ]' : ''}`}
+          className={`flex-1 px-4 py-2 border border-slate-700 bg-slate-950 rounded-md text-sm text-slate-100 placeholder:text-slate-600 focus:ring-1 focus:ring-cyan-500 focus:border-cyan-500 outline-none transition-all ${isSecret && !show && secretInputType === 'text' ? '[-webkit-text-security:disc]' : ''}`}
         />
         {isSecret && <button type="button" onClick={() => setShow(!show)} className="p-2 text-slate-500 hover:text-cyan-400 transition-colors"><EyeOff size={16} /></button>}
         <button type="button" onClick={handleCopy} className="p-2 text-slate-500 hover:text-cyan-400 transition-colors"><Copy size={16} /></button>
