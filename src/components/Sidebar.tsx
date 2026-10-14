@@ -1,28 +1,38 @@
 import { navigation } from '../constants';
-import { LogOut } from 'lucide-react';
+import { LogOut, Sparkles } from 'lucide-react';
 import { useAuth } from '../services/firebase/auth';
 
 export const Sidebar = ({ activeTab, onTabChange }: { activeTab: string, onTabChange: (tab: string) => void }) => {
   const { logout } = useAuth();
-  
+
   return (
-    <aside className="w-64 border-r border-slate-800 bg-slate-950 h-screen flex flex-col">
-      <div className="p-6 text-xl font-bold tracking-tight text-cyan-500">BOT IA PC</div>
-      <nav className="flex-1 p-4 flex flex-col gap-1">
+    <aside className="flex h-auto w-full shrink-0 flex-col border-b border-slate-800 bg-slate-950/95 md:sticky md:top-0 md:h-screen md:w-64 md:border-b-0 md:border-r">
+      <div className="flex items-center gap-3 border-b border-slate-800 px-5 py-4 md:px-6 md:py-6">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-sky-400 to-blue-600 text-white shadow-lg shadow-sky-950/40">
+          <Sparkles size={21} strokeWidth={2.2} />
+        </div>
+        <div className="min-w-0">
+          <div className="text-base font-bold tracking-tight text-slate-100">BOT IA <span className="text-sky-400">PC</span></div>
+          <div className="text-[10px] font-medium uppercase tracking-[0.17em] text-slate-500">Control center</div>
+        </div>
+      </div>
+      <nav aria-label="Navegación principal" className="flex min-w-0 flex-row gap-1 overflow-x-auto px-3 py-3 md:flex-1 md:flex-col md:overflow-x-visible md:overflow-y-auto md:px-3 md:py-5">
         {navigation.map(item => (
           <button
             key={item.id}
             onClick={() => onTabChange(item.id)}
-            className={`flex items-center gap-3 px-4 py-2.5 rounded-md text-sm transition-all duration-200 ${activeTab === item.id ? 'bg-slate-900 text-cyan-400 border-l-2 border-cyan-500' : 'text-slate-400 hover:text-slate-100 hover:bg-slate-900'}`}
+            aria-current={activeTab === item.id ? 'page' : undefined}
+            title={item.name}
+            className={`flex min-h-10 shrink-0 items-center gap-2.5 whitespace-nowrap rounded-xl border border-transparent px-3 py-2.5 text-left text-sm font-medium transition-all duration-200 md:w-full md:px-3.5 ${activeTab === item.id ? 'nav-item-active' : 'text-slate-400 hover:border-slate-800 hover:bg-slate-900 hover:text-slate-100'}`}
           >
-            <item.icon size={18} />
-            {item.name}
+            <item.icon size={17} strokeWidth={1.9} className="shrink-0" />
+            <span>{item.name}</span>
           </button>
         ))}
       </nav>
-      <div className="p-4 border-t border-slate-800">
-        <button onClick={logout} className="flex items-center gap-3 px-4 py-2.5 text-sm text-slate-400 hover:text-red-400 hover:bg-red-950/20 transition-all rounded-md w-full">
-          <LogOut size={18} />
+      <div className="border-t border-slate-800 p-3 md:p-4">
+        <button onClick={logout} className="flex min-h-10 w-full items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-400 transition-colors hover:bg-red-500/10 hover:text-red-300 md:justify-start md:px-4">
+          <LogOut size={17} />
           Cerrar sesión
         </button>
       </div>
