@@ -8,11 +8,11 @@ export const Sidebar = ({ activeTab, onTabChange }: { activeTab: string, onTabCh
   return (
     <aside className="flex h-auto w-full shrink-0 flex-col border-b border-slate-800 bg-slate-950/95 md:sticky md:top-0 md:h-screen md:w-64 md:border-b-0 md:border-r">
       <div className="flex items-center gap-3 border-b border-slate-800 px-5 py-4 md:px-6 md:py-6">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-purple-700 text-white shadow-lg shadow-purple-950/40">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-700 text-slate-100 shadow-md shadow-black/20">
           <Sparkles size={21} strokeWidth={2.2} />
         </div>
         <div className="min-w-0">
-          <div className="text-base font-bold tracking-tight text-slate-100">BOT IA <span className="text-violet-300">PC</span></div>
+          <div className="text-base font-bold tracking-tight text-slate-100">BOT IA <span className="text-slate-300">PC</span></div>
           <div className="text-[10px] font-medium uppercase tracking-[0.17em] text-slate-500">Control center</div>
         </div>
       </div>
