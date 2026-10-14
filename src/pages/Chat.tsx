@@ -326,9 +326,7 @@ export const ChatPage = () => {
       };
     }));
   };
-  const handleFileSelection = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files || []);
-    event.target.value = '';
+  const handleFiles = async (files: File[]) => {
     if (!files.length) return;
     const allowed = (file: File) => /^(image\/(jpeg|png|gif|webp)|audio\/[a-z0-9.+-]+|video\/[a-z0-9.+-]+|application\/pdf)$/i.test(file.type);
     const existingBytes = pendingAttachments.reduce((sum, item) => sum + Math.floor(item.data.length * 3 / 4), 0);
@@ -360,6 +358,25 @@ export const ChatPage = () => {
       } catch { setError(`No se pudo leer "${file.name}".`); }
     }
     if (next.length) { setPendingAttachments(current => [...current, ...next]); setError(''); }
+  };
+  const handleFileSelection = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []);
+    event.target.value = '';
+    void handleFiles(files);
+  };
+  const handlePaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const images = Array.from(event.clipboardData.items)
+      .filter(item => item.kind === 'file' && item.type.startsWith('image/'))
+      .map(item => item.getAsFile())
+      .filter((file): file is File => Boolean(file));
+    if (!images.length) return;
+    event.preventDefault();
+    void handleFiles(images.map((file, index) => {
+      if (!file.name || file.name === 'image.png') {
+        return new File([file], `imagen-pegada-${Date.now()}-${index + 1}.${file.type.split('/')[1] || 'png'}`, { type: file.type });
+      }
+      return file;
+    }));
   };
   const handleSend = async (event?: React.FormEvent) => {
     event?.preventDefault();
@@ -606,7 +623,7 @@ ${agents.map(agent => `• $${aliasFor(agent)} — ${agent.name}`).join('\\n')}`
           </div>}
           {pendingAttachments.length > 0 && <div className="flex flex-wrap gap-2 border-b border-slate-800 px-3 py-2">{pendingAttachments.map((file, index) => <div key={`${file.name}-${index}`} className="inline-flex max-w-full items-center gap-2 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-300"><Paperclip size={13} className="shrink-0 text-cyan-300"/><span className="max-w-[180px] truncate">{file.name}</span><button type="button" aria-label={`Quitar ${file.name}`} onClick={() => setPendingAttachments(current => current.filter((_, i) => i !== index))} className="rounded p-0.5 text-slate-500 hover:text-red-300"><X size={13}/></button></div>)}</div>}
           <input ref={fileInputRef} type="file" multiple accept="image/jpeg,image/png,image/gif,image/webp,audio/*,video/*,application/pdf" onChange={event => void handleFileSelection(event)} className="hidden" />
-          <textarea ref={textareaRef} value={message} onChange={event => setMessage(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void handleSend(); } }} placeholder={effectiveMode === 'model' ? `Escribe a ${temporarySelected ? temporaryLabel : (selectedCatalogModel?.name || selectedModel?.name || 'el modelo')}…` : selectedAgent ? `Escribe a ${selectedAgent.name}…` : 'Activa o crea un agente para empezar…'} rows={2} disabled={(effectiveMode === 'model' ? (!selectedCatalogModel && !selectedModel && !temporarySelected) : !selectedAgent) || sending} className="max-h-40 min-h-[58px] w-full resize-y bg-transparent px-4 pt-4 pb-2 text-sm text-slate-100 placeholder:text-slate-500 outline-none disabled:opacity-50"/>
+          <textarea ref={textareaRef} value={message} onChange={event => setMessage(event.target.value)} onPaste={handlePaste} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void handleSend(); } }} placeholder={effectiveMode === 'model' ? `Escribe a ${temporarySelected ? temporaryLabel : (selectedCatalogModel?.name || selectedModel?.name || 'el modelo')}…` : selectedAgent ? `Escribe a ${selectedAgent.name}…` : 'Activa o crea un agente para empezar…'} rows={2} disabled={(effectiveMode === 'model' ? (!selectedCatalogModel && !selectedModel && !temporarySelected) : !selectedAgent) || sending} className="max-h-40 min-h-[58px] w-full resize-y bg-transparent px-4 pt-4 pb-2 text-sm text-slate-100 placeholder:text-slate-500 outline-none disabled:opacity-50"/>
           <div className="flex items-center justify-between gap-3 px-3 pb-3"><div className="flex min-w-0 items-center gap-2"><button type="button" onClick={() => fileInputRef.current?.click()} disabled={sending || (effectiveMode === 'model' && !selectedCatalogModel && !selectedModel && !temporarySelected) || (effectiveMode === 'agent' && !selectedAgent)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-40" title="Adjuntar imagen, audio, vídeo o PDF"><Paperclip size={16}/></button><p className="text-[10px] text-slate-600">Enter para enviar · Shift + Enter para nueva línea</p></div><button type="submit" disabled={(!message.trim() && !pendingAttachments.length) || (effectiveMode === 'model' ? (temporarySelected ? !temporaryReady : (!selectedCatalogModel && !selectedModel)) : !selectedAgent) || sending} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-cyan-600 text-white transition-colors hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-40" title="Enviar mensaje">{sending ? <LoaderCircle size={17} className="animate-spin"/> : <Send size={16}/>}</button></div>
         </form><p className="mt-2 text-center text-[10px] text-slate-600">En modo Agente se aplica su personalidad; en modo Modelo se consulta directamente. Los modelos temporales no se registran y requieren volver a introducir la clave al recargar.</p>
       </div></div>
